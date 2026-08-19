@@ -53,5 +53,10 @@
     };
   };
 
+  # zsh itself isn't managed by Home Manager here, so shell integration is
+  # wired up by hand with a line appended to ~/.zshrc rather than via
+  # enableZshIntegration (which only works when programs.zsh.enable = true).
+  programs.zoxide.enable = true;
+
   programs.home-manager.enable = true;
 }
