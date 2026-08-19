@@ -42,5 +42,16 @@
     EDITOR = "nvim";
   };
 
+  programs.kitty = {
+    enable = true;
+    shellIntegration.enableZshIntegration = true;
+    settings = {
+      font_family = "JetBrainsMono Nerd Font";
+      font_size = 14.0;
+      enable_audio_bell = "no";
+      confirm_os_window_close = 0;
+    };
+  };
+
   programs.home-manager.enable = true;
 }
