@@ -28,6 +28,11 @@
     unzip
     gnumake
     nerd-fonts.fira-code
+    gh
+    # Atlassian's official CLI — covers Bitbucket Cloud (bitbucket.org).
+    # nixpkgs also has a `bitbucket-cli` package, but that one only talks to
+    # self-hosted Bitbucket Server/Data Center's REST API, not bitbucket.org.
+    acli
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).

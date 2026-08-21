@@ -53,6 +53,16 @@ pins exact package versions.
   config and removed from the imperative profile (`nix profile remove`) so
   there's one source of truth instead of two overlapping ones.
 
+- **`gh`** (GitHub CLI) and **`acli`** (Atlassian's official CLI, covering
+  Bitbucket Cloud/bitbucket.org). nixpkgs also has a `bitbucket-cli`
+  package, but that one only talks to self-hosted Bitbucket Server/Data
+  Center's REST API, not bitbucket.org — not what's wanted here, so it was
+  swapped for `acli`. `acli` ships under an unfree license, which
+  `flake.nix` allows via a `config.allowUnfreePredicate` scoped to just
+  that package name (not a blanket `allowUnfree = true`), so any other
+  unfree package added later still fails loudly instead of silently
+  slipping through.
+
 - **Kitty** (`programs.kitty`). Config is generated to
   `~/.config/kitty/kitty.conf` from the `settings` block in `home.nix` — edit
   it there, not the generated file directly, or changes get overwritten on
@@ -135,20 +145,28 @@ manual `cp`/`rm` instead.
 
 ## History
 
-- `4b31166` — initial config: Neovim/LazyVim via Nix, migrated
+- `72898d4` — initial config: Neovim/LazyVim via Nix, migrated
   `bat`/`btop`/`fd`/`fzf`/`lazygit`/`neovim`/`ripgrep` off the imperative
   `nix profile`.
-- `462528a` — added Kitty, wired to the shared Nerd Font.
-- `03b7917` — added `mac-app-util` (Spotlight/Launchpad fix for Kitty).
-- `9765362` — added `zoxide`.
-- `581668d` — switched the Nerd Font from JetBrains Mono to Fira Code.
-- `35405cc` → `9c579de` → `d82c801` → `5e22fd6` — theme churn: Gruvbox Dark
+- `515c010` — added Kitty, wired to the shared Nerd Font.
+- `820c59b` — added `mac-app-util` (Spotlight/Launchpad fix for Kitty).
+- `27bd2e9` — added `zoxide`.
+- `46e3a7f` — switched the Nerd Font from JetBrains Mono to Fira Code.
+- `0a3d640` → `f2f1b8b` → `af0f57a` → `964c466` — theme churn: Gruvbox Dark
   on Kitty, then matched to Tokyo Night Moon (Neovim's default), then
   Starship added with the Tokyo Night preset, then everything (Kitty,
   Neovim, Starship) settled on Gruvbox together.
-- `fd73ef2` — added `zsh-autosuggestions` + `fzf-tab` (fixed-path symlink
+- `ee51667` — added `zsh-autosuggestions` + `fzf-tab` (fixed-path symlink
   workaround, since zsh wasn't Home-Manager-owned yet at this point).
-- `efc6648` / `daadf1f` — fixed + documented the Kitty Nerd Font `Mono`
+- `1f629f8` / `4efec0c` — fixed + documented the Kitty Nerd Font `Mono`
   variant gotcha.
-- `f7b83f1` — brought `.zshrc` under Home Manager; see the dedicated
+- `dd471d3` — brought `.zshrc` under Home Manager; see the dedicated
   section above for the full mapping and migration mechanics.
+- `3096c4a` — rewrote all commit history to use the correct author identity
+  (`Miguel Basire <miguel.basire@gmail.com>`, matching the global git
+  config that also owns the SSH signing key) and SSH-signed every commit.
+  Note: this rewrote every hash in this repo — old hashes referenced
+  anywhere outside this file no longer resolve.
+- added `gh` and `acli` (GitHub/Bitbucket Cloud CLIs); required scoping
+  `config.allowUnfreePredicate` to `acli` in `flake.nix` since it's an
+  unfree package.

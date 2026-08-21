@@ -56,7 +56,12 @@ Two things `checkhealth` alone won't catch:
 
 - `flake.nix` — inputs (`nixpkgs-unstable`, `home-manager`, `mac-app-util`)
   and the single `homeConfigurations."miguel"` output. `system` is
-  hardcoded to `"aarch64-darwin"`, not parameterized.
+  hardcoded to `"aarch64-darwin"`, not parameterized. `pkgs` is built with
+  `import nixpkgs { inherit system; config.allowUnfreePredicate = ...; }`
+  rather than plain `nixpkgs.legacyPackages.${system}`, scoped to allow
+  just `acli` (unfree-licensed). Adding another unfree package means adding
+  its name to that predicate's list, not flipping on `allowUnfree = true`
+  wholesale.
 - `home.nix` — all managed state: `home.packages` (CLI tools), the
   `home.file` entry that wires up `nvim/`, and `programs.{kitty,zsh,zoxide,
   starship,fzf}`.
