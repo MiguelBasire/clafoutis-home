@@ -49,7 +49,14 @@
     # preset so terminal, editor, and prompt all share one palette.
     themeFile = "gruvbox-dark";
     settings = {
-      font_family = "FiraCode Nerd Font";
+      # The plain "FiraCode Nerd Font" family fails to resolve in this
+      # Kitty build even though macOS/CoreText itself sees it fine
+      # (confirmed directly via CTFontManagerCopyAvailableFontFamilyNames) —
+      # Kitty falls back to Menlo and Nerd Font icons render as tofu boxes.
+      # The "Mono" variant resolves correctly, and is the technically
+      # correct choice for a terminal anyway: guaranteed fixed-width glyphs
+      # for icons, vs. the plain family's proportional metrics.
+      font_family = "FiraCode Nerd Font Mono";
       font_size = 14.0;
       enable_audio_bell = "no";
       confirm_os_window_close = 0;
