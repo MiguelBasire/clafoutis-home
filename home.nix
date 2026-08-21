@@ -64,15 +64,15 @@
 
   programs.starship = {
     enable = true;
-    # Starship's official "Tokyo Night" preset, fetched verbatim and parsed
-    # rather than hand-transcribed, so the glyphs/colors stay byte-accurate
-    # to the upstream preset (https://starship.rs/presets/#tokyo-night) and
-    # match the Kitty/Neovim theme.
+    # Starship's official "Gruvbox Rainbow" preset, fetched verbatim and
+    # parsed rather than hand-transcribed, so the glyphs/colors stay
+    # byte-accurate to the upstream preset
+    # (https://starship.rs/presets/#gruvbox-rainbow).
     settings = builtins.fromTOML (
       builtins.readFile (
         pkgs.fetchurl {
-          url = "https://starship.rs/presets/toml/tokyo-night.toml";
-          sha256 = "sha256-Krwj7CJ3wd4xoWuZjADDyq4EGEDF1orvFaBDdCTrhO0=";
+          url = "https://starship.rs/presets/toml/gruvbox-rainbow.toml";
+          sha256 = "sha256-YFTZi5FggispDhtp85dUTb26C7Sfv+Cx8MVnUy4XANk=";
         }
       )
     );
