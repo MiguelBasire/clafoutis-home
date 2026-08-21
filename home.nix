@@ -26,7 +26,7 @@
     python3
     unzip
     gnumake
-    nerd-fonts.jetbrains-mono
+    nerd-fonts.fira-code
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).
@@ -46,7 +46,7 @@
     enable = true;
     shellIntegration.enableZshIntegration = true;
     settings = {
-      font_family = "JetBrainsMono Nerd Font";
+      font_family = "FiraCode Nerd Font";
       font_size = 14.0;
       enable_audio_bell = "no";
       confirm_os_window_close = 0;
