@@ -35,6 +35,23 @@ nvim --headless "+Lazy! sync" +qa
 nvim --headless "+checkhealth lazyvim" +qa
 ```
 
+Two things `checkhealth` alone won't catch:
+- **Plain startup errors.** `nvim --headless +qa` with no file arg, checked for
+  stderr output, catches a plugin spec failing to load (e.g. `{ import =
+  "lazyvim.plugins.extras.lang.X" }` where `X` doesn't exist in the
+  installed LazyVim version — this happened once with `lang.lua`, which
+  got folded into core and removed as a standalone extra between
+  versions). `checkhealth` didn't flag it; only the raw startup stderr did.
+- **LSP servers install lazily, on first buffer of a matching filetype** —
+  not during `Lazy! sync`, which only installs/updates *plugins*. To verify
+  an LSP actually attaches after adding a language extra, open a real file
+  of that type and poll `vim.lsp.get_clients()`, e.g.:
+  ```sh
+  nvim --headless path/to/sample.ts -c 'lua vim.wait(15000, function() return #vim.lsp.get_clients() > 0 end, 500); print(vim.inspect(vim.lsp.get_clients()))' -c 'qa!'
+  ```
+  Give it real time (15s+) — Mason installing a server via npm is much
+  slower than a short fixed sleep.
+
 ## Architecture
 
 - `flake.nix` — inputs (`nixpkgs-unstable`, `home-manager`, `mac-app-util`)
