@@ -62,6 +62,18 @@ pins exact package versions.
   by having the `kitty` binary inject a snippet at shell-launch time, not by
   Home Manager writing into your `.zshrc`.
 
+  `font_family` must be set to the **`Mono`** variant of a Nerd Font (e.g.
+  `"FiraCode Nerd Font Mono"`), not the plain family name. This Kitty build
+  fails to resolve the plain `"FiraCode Nerd Font"` family and silently
+  falls back to Menlo (breaking every icon glyph), even though macOS itself
+  has it correctly registered — confirmed by querying
+  `CTFontManagerCopyAvailableFontFamilyNames` directly via a Swift one-liner,
+  bypassing Kitty entirely. A `fontd` restart and a full logout/reboot both
+  failed to fix it; switching to the `Mono` variant is what actually worked
+  (and is the more correct choice for a terminal regardless, since it
+  guarantees fixed-width glyphs instead of the plain family's proportional
+  metrics).
+
 - **`mac-app-util`** (flake input + Home Manager module). Fixes a
   Nix-on-macOS-specific problem: `/nix` is mounted as its own APFS volume
   with the `nobrowse` flag, so Spotlight's indexer skips everything under it
