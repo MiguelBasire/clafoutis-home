@@ -45,7 +45,9 @@
   programs.kitty = {
     enable = true;
     shellIntegration.enableZshIntegration = true;
-    themeFile = "gruvbox-dark";
+    # Matches LazyVim's default colorscheme (tokyonight-moon) so the
+    # terminal and editor share one palette.
+    themeFile = "tokyo_night_moon";
     settings = {
       font_family = "FiraCode Nerd Font";
       font_size = 14.0;
