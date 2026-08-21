@@ -145,28 +145,34 @@ manual `cp`/`rm` instead.
 
 ## History
 
-- `72898d4` — initial config: Neovim/LazyVim via Nix, migrated
+- `5a9f763` — initial config: Neovim/LazyVim via Nix, migrated
   `bat`/`btop`/`fd`/`fzf`/`lazygit`/`neovim`/`ripgrep` off the imperative
   `nix profile`.
-- `515c010` — added Kitty, wired to the shared Nerd Font.
-- `820c59b` — added `mac-app-util` (Spotlight/Launchpad fix for Kitty).
-- `27bd2e9` — added `zoxide`.
-- `46e3a7f` — switched the Nerd Font from JetBrains Mono to Fira Code.
-- `0a3d640` → `f2f1b8b` → `af0f57a` → `964c466` — theme churn: Gruvbox Dark
+- `9ca03ba` — added Kitty, wired to the shared Nerd Font.
+- `aed0bd7` — added `mac-app-util` (Spotlight/Launchpad fix for Kitty).
+- `fb277fb` — added `zoxide`.
+- `bca6a18` — switched the Nerd Font from JetBrains Mono to Fira Code.
+- `2da7a48` → `f53be55` → `ab10ff9` → `d280b92` — theme churn: Gruvbox Dark
   on Kitty, then matched to Tokyo Night Moon (Neovim's default), then
   Starship added with the Tokyo Night preset, then everything (Kitty,
   Neovim, Starship) settled on Gruvbox together.
-- `ee51667` — added `zsh-autosuggestions` + `fzf-tab` (fixed-path symlink
+- `cc40662` — added `zsh-autosuggestions` + `fzf-tab` (fixed-path symlink
   workaround, since zsh wasn't Home-Manager-owned yet at this point).
-- `1f629f8` / `4efec0c` — fixed + documented the Kitty Nerd Font `Mono`
+- `abf38ad` / `7326aa7` — fixed + documented the Kitty Nerd Font `Mono`
   variant gotcha.
-- `dd471d3` — brought `.zshrc` under Home Manager; see the dedicated
+- `0588a3b` — brought `.zshrc` under Home Manager; see the dedicated
   section above for the full mapping and migration mechanics.
-- `3096c4a` — rewrote all commit history to use the correct author identity
-  (`Miguel Basire <miguel.basire@gmail.com>`, matching the global git
-  config that also owns the SSH signing key) and SSH-signed every commit.
-  Note: this rewrote every hash in this repo — old hashes referenced
-  anywhere outside this file no longer resolve.
-- added `gh` and `acli` (GitHub/Bitbucket Cloud CLIs); required scoping
-  `config.allowUnfreePredicate` to `acli` in `flake.nix` since it's an
-  unfree package.
+- `230a2d1` — added `gh` and `acli` (GitHub/Bitbucket Cloud CLIs); required
+  scoping `config.allowUnfreePredicate` to `acli` in `flake.nix` since it's
+  an unfree package.
+- **Two full-history rewrites, not individual commits.** All commits were
+  rewritten (via `git-filter-repo` + a root `git rebase --exec 'commit
+  --amend -S'`) first to fix the author identity to `Miguel Basire
+  <miguel.basire@gmail.com>` and SSH-sign every commit, then again to swap
+  that email for the GitHub-provided
+  `413615+MiguelBasire@users.noreply.github.com` before this repo went
+  public, keeping the real address out of scrapers while commits still
+  verify against the same SSH key. Both rewrites changed every hash in
+  this repo — hashes referenced above are current as of the second
+  rewrite; anything cited elsewhere (issues, old clones, etc.) predating
+  it won't resolve.
