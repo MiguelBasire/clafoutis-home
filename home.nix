@@ -57,10 +57,19 @@
   };
 
   # zsh itself isn't managed by Home Manager here, so shell integration for
-  # both of these is wired up by hand with lines appended to ~/.zshrc rather
-  # than via enableZshIntegration (which only works when
-  # programs.zsh.enable = true).
+  # these is wired up by hand with lines appended to ~/.zshrc rather than
+  # via enableZshIntegration (which only works when programs.zsh.enable =
+  # true).
   programs.zoxide.enable = true;
+
+  # zsh-autosuggestions (ghost-text history suggestions) and fzf-tab (fuzzy
+  # Tab-completion menu). Symlinked to a fixed path rather than sourced
+  # straight from the Nix store, so the `source` line appended to ~/.zshrc
+  # never has to change when the store path's hash changes on update.
+  home.file.".local/share/zsh-plugins/zsh-autosuggestions.zsh".source =
+    "${pkgs.zsh-autosuggestions}/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh";
+  home.file.".local/share/zsh-plugins/fzf-tab.plugin.zsh".source =
+    "${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh";
 
   programs.starship = {
     enable = true;
