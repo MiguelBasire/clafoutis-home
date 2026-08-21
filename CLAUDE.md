@@ -41,8 +41,8 @@ nvim --headless "+checkhealth lazyvim" +qa
   and the single `homeConfigurations."miguel"` output. `system` is
   hardcoded to `"aarch64-darwin"`, not parameterized.
 - `home.nix` — all managed state: `home.packages` (CLI tools), the
-  `home.file` entry that wires up `nvim/`, `programs.kitty`,
-  `programs.zoxide`.
+  `home.file` entry that wires up `nvim/`, and `programs.{kitty,zsh,zoxide,
+  starship,fzf}`.
 - `nvim/` — the LazyVim starter template, git-tracked here. Wired into
   `~/.config/nvim` via `home.file` with `recursive = true`, which symlinks
   each file individually rather than symlinking the whole directory in one
@@ -61,11 +61,13 @@ nvim --headless "+checkhealth lazyvim" +qa
   exists because `/nix` is mounted with the `nobrowse` flag, so Spotlight
   never indexes app bundles that live there, even when symlinked into
   `~/Applications`.
-- `~/.zshrc` is deliberately **not** managed here (`programs.zsh.enable` is
-  unset). `zoxide`'s shell hook is a hand-added `eval` line in `~/.zshrc`
-  rather than `enableZshIntegration`, which requires Home Manager to own
-  zsh to do anything. See the `.zshrc` section of `README.md` for the full
-  reasoning and the steps to migrate later if that changes.
+- `~/.zshrc` (plus `.zshenv`/`.zprofile`) **is** managed here
+  (`programs.zsh.enable = true`) — generated, same rule as `kitty.conf`
+  below: don't hand-edit it, changes go in `home.nix`'s `programs.zsh`
+  block and get overwritten on the next activate. `zoxide`/`starship`/`fzf`
+  all use real `enableZshIntegration = true` rather than hand-appended
+  `eval` lines. See the `~/.zshrc is Home Manager's` section of `README.md`
+  for the full option-by-option mapping.
 
 ## Working conventions specific to this repo
 
@@ -77,5 +79,14 @@ nvim --headless "+checkhealth lazyvim" +qa
   first if unsure.
 - Edit `~/.config/kitty/kitty.conf` never directly — it's generated from the
   `programs.kitty.settings` block in `home.nix` and gets overwritten on the
-  next `./result/activate`. Same rule for anything else under `home.file`
-  or a `programs.*` module.
+  next `./result/activate`. Same rule for `~/.zshrc`/`.zshenv`/`.zprofile`
+  and anything else under `home.file` or a `programs.*` module.
+- New files under `nvim/` (or anywhere else referenced by a local path in
+  the flake) must be `git add`ed before `nix build` — flakes only copy
+  git-tracked content into the store when evaluating a local flake, so an
+  untracked file is silently invisible to the build until staged. Bit us
+  once already: `nvim/lua/plugins/colorscheme.lua` didn't take effect until
+  `git add`ed, even though the build succeeded.
+- Nerd Font `font_family` values in `programs.kitty.settings` must use the
+  **`Mono`** variant (e.g. `"FiraCode Nerd Font Mono"`), not the plain
+  family name — see `README.md` for why.

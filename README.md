@@ -34,9 +34,10 @@ pins exact package versions.
 - **Neovim + LazyVim.** `home.packages` installs `neovim` itself plus
   everything LazyVim wants at runtime: `ripgrep`/`fd` (telescope/fzf-lua),
   `lazygit`, `tree-sitter` (CLI), `nodejs`/`python3`/`unzip`/`gnumake` (for
-  Mason-installed LSPs/formatters/linters), and a JetBrains Mono Nerd Font
-  for icons. A C compiler comes from Xcode Command Line Tools, already on
-  the system — deliberately not duplicated via `pkgs.gcc`.
+  Mason-installed LSPs/formatters/linters), and a Fira Code Nerd Font for
+  icons (`fzf` moved to `programs.fzf` — see below). A C compiler comes
+  from Xcode Command Line Tools, already on the system — deliberately not
+  duplicated via `pkgs.gcc`.
 
   The LazyVim config itself is **not** a Home Manager module — LazyVim
   manages its own plugins via `lazy.nvim`, which is orthogonal to Nix. What
@@ -56,11 +57,8 @@ pins exact package versions.
   `~/.config/kitty/kitty.conf` from the `settings` block in `home.nix` — edit
   it there, not the generated file directly, or changes get overwritten on
   the next switch. Font is pinned to the same Nerd Font Neovim uses. Zsh
-  shell integration (jump-to-prompt, cursor shape) is turned on via
-  `shellIntegration.enableZshIntegration` — this one *is* safe to set
-  without Home Manager owning `.zshrc`, because Kitty's own integration works
-  by having the `kitty` binary inject a snippet at shell-launch time, not by
-  Home Manager writing into your `.zshrc`.
+  shell integration (jump-to-prompt, cursor shape, cwd tracking) is turned
+  on via `shellIntegration.enableZshIntegration`.
 
   `font_family` must be set to the **`Mono`** variant of a Nerd Font (e.g.
   `"FiraCode Nerd Font Mono"`), not the plain family name. This Kitty build
@@ -85,69 +83,55 @@ pins exact package versions.
   across updates. Applies automatically to any GUI app added via
   `home.packages` — Kitty is the only one so far.
 
-- **`zoxide`** (`programs.zoxide.enable = true`). Just installs the binary;
-  see below for why the shell integration isn't done the "normal" way.
+- **`zsh`** (`programs.zsh`) — see the dedicated section below; this is what
+  everything else's `enableZshIntegration` now plugs into.
 
-## `.zshrc`: hand-maintained, on purpose (for now)
+- **`zoxide`**, **`starship`**, **`fzf`** — all `enable = true` with
+  `enableZshIntegration = true`, now that `zsh` is Home Manager's. No more
+  hand-appended `eval "$(... init zsh)"` lines.
 
-`~/.zshrc` is **not** managed by Home Manager. `programs.zsh.enable` is left
-off. This was a deliberate choice to keep the blast radius small while
-bringing Neovim/Kitty/etc. under Nix — not a technical limitation. Notes to
-self (or future-me re-reading this) in case that decision gets revisited:
+## `~/.zshrc` is Home Manager's
 
-**Why `zoxide`'s shell hook is a manual line instead of
-`enableZshIntegration`.** Home Manager's `programs.zoxide.enableZshIntegration`
-only does anything when `programs.zsh.enable = true` — it works by appending
-to the `.zshrc` Home Manager itself generates. Since Home Manager doesn't own
-`.zshrc` here, that option would be a silent no-op. Instead, the line
-`eval "$(zoxide init zsh)"` was appended to `~/.zshrc` directly, by hand.
-Kitty's integration is different — see above — which is why it *could* use
-the normal option.
+As of the "Bring `.zshrc` under Home Manager" commit (see History),
+`programs.zsh.enable = true;` and `.zshrc` (plus
+`.zshenv`/`.zprofile`) are generated files — symlinks into `/nix/store`, same
+as `kitty.conf` and `~/.config/nvim`. **Don't hand-edit `.zshrc` anymore** —
+it gets silently overwritten on the next `./result/activate`. Everything
+that used to be a manual line lives in `home.nix` now:
 
-**The question that prompted this section**: if Home Manager generated
-`.zshrc`, how would it ever get *loaded* — isn't there a bootstrapping
-problem? No, and here's why:
+| What | Where in `home.nix` |
+|---|---|
+| Nix multi-user installer's shell bootstrap (`nix.sh`, `nix-daemon.sh`, `NIX_PATH` fallback) | `programs.zsh.initContent` at `lib.mkOrder 500`, preserved verbatim from the original hand-written block |
+| `PATH="$HOME/.local/bin:$PATH"` | `home.sessionPath` |
+| `NIX_CONFIG="extra-experimental-features = nix-command flakes"` | `home.sessionVariables` (moved here from a zsh-only export — now applies to *any* HM-managed shell, and is load-bearing: without it `nix build`/`nix flake` refuse to run, since `/etc/nix/nix.conf` doesn't enable those features globally on this machine) |
+| `autoload -Uz compinit; compinit` | `programs.zsh.enableCompletion = true;` |
+| `source .../zsh-autosuggestions.zsh` | `programs.zsh.autosuggestion.enable = true;` — no plugin wiring needed, it's a first-class option |
+| `source .../fzf-tab.plugin.zsh` (previously via a fixed-path symlink in `~/.local/share/zsh-plugins/`, worked around the Nix store's volatile hash) | `programs.zsh.plugins = [{ name = "fzf-tab"; src = pkgs.zsh-fzf-tab; file = "share/fzf-tab/fzf-tab.plugin.zsh"; }];` — Home Manager sources plugins at `mkOrder 900`, safely after `enableCompletion`'s compinit (570) and autosuggestion (700), so the ordering `fzf-tab` needs is automatic |
+| `eval "$(zoxide init zsh)"` / `eval "$(starship init zsh)"` | `enableZshIntegration = true;` on `programs.zoxide` / `programs.starship` respectively |
 
-- Home Manager is not a running service. It's invoked by hand
-  (`home-manager switch`, or the `nix build` + `./result/activate` pair
-  above). Running it evaluates `home.nix` and writes out a **complete**,
-  static `~/.zshrc` (as a symlink to an immutable file in `/nix/store`) —
-  once, ahead of time. It is not regenerated or re-evaluated when a shell
-  starts.
-- After that, opening a terminal is completely ordinary: zsh starts, sources
-  `~/.zshrc` like it always has, done. Nothing "Home Manager" needs to be
-  running or resolvable at that moment — the generated file already has
-  every alias, function, and init snippet baked into its text.
-- The part that actually matters is **`PATH`**. Today, `nvim`, `zoxide`, etc.
-  resolve because of this block already at the top of `~/.zshrc` (written by
-  the Nix installer, before this config existed):
+**Two things that started working as a side effect, not because anyone asked for them:**
+- `programs.kitty.shellIntegration.enableZshIntegration` was already `true`
+  before this migration, but was silently inert — Kitty's integration script
+  only activates by being sourced from `.zshrc`, and Home Manager didn't own
+  that file yet. It's real now: Kitty's `OSC 133` prompt markers fire (visible
+  via `kitten @ get-text --ansi`), enabling cursor-shape-per-vi-mode, jump to
+  previous prompt, and cwd-aware new tabs/splits.
+- `programs.fzf.enableZshIntegration` adds fzf's own `Ctrl+R` (history
+  search) and `Ctrl+T` / `**<Tab>` (fuzzy file insertion) — the `fzf` binary
+  was installed before, but its keybindings were never wired up.
+- Shell history now actually persists across sessions
+  (`HISTFILE=~/.zsh_history`, `HISTSIZE`/`SAVEHIST=10000`, `SHARE_HISTORY`)
+  — `enableCompletion`'s defaults. The old hand-written `.zshrc` never set
+  any of this, so history likely wasn't being saved between sessions before.
 
-  ```sh
-  if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-  fi
-  ```
-
-  If Home Manager took over `.zshrc` generation, it would regenerate this
-  entire file from scratch — and it automatically emits the equivalent
-  session-var sourcing near the top of its own output. You wouldn't
-  hand-maintain that block anymore; Home Manager would own and reproduce it
-  every time you switch.
-
-**If I do switch `.zshrc` over to Home Manager later:**
-
-1. Add `programs.zsh.enable = true;` to `home.nix`, move existing
-   aliases/exports/functions into `programs.zsh.shellAliases` /
-   `initContent`, and switch `zoxide`/`kitty` integration over to
-   `enableZshIntegration = true`.
-2. Run the switch with the backup flag so the current hand-written file
-   isn't just clobbered: `home-manager switch -b backup` (or pass the
-   equivalent option if using the `nix build` + `./result/activate` path —
-   check `home-manager switch --help` for the current flag name first).
-   Old file ends up at `~/.zshrc.backup` for comparison/recovery.
-3. The *first* switch after enabling this still needs to run from a shell
-   that already has `nix` on `PATH` — true today via the block above — so
-   there's no ordering problem there either.
+**Migration mechanics, for the record:** the first `./result/activate` after
+adding `programs.zsh.enable = true;` refused with *"Existing file
+'/Users/miguel/.zshrc' would be clobbered"* — expected, since the old file
+wasn't Home-Manager-owned. Fix was `cp ~/.zshrc ~/.zshrc.pre-homemanager-backup`
+(manual safety copy, still on disk), then `rm ~/.zshrc` and re-running
+`activate`. The raw `nix build` + `./result/activate` path doesn't take a
+`-b backup` flag the way the `home-manager switch` CLI does — hence the
+manual `cp`/`rm` instead.
 
 ## History
 
@@ -157,3 +141,14 @@ problem? No, and here's why:
 - `462528a` — added Kitty, wired to the shared Nerd Font.
 - `03b7917` — added `mac-app-util` (Spotlight/Launchpad fix for Kitty).
 - `9765362` — added `zoxide`.
+- `581668d` — switched the Nerd Font from JetBrains Mono to Fira Code.
+- `35405cc` → `9c579de` → `d82c801` → `5e22fd6` — theme churn: Gruvbox Dark
+  on Kitty, then matched to Tokyo Night Moon (Neovim's default), then
+  Starship added with the Tokyo Night preset, then everything (Kitty,
+  Neovim, Starship) settled on Gruvbox together.
+- `fd73ef2` — added `zsh-autosuggestions` + `fzf-tab` (fixed-path symlink
+  workaround, since zsh wasn't Home-Manager-owned yet at this point).
+- `efc6648` / `daadf1f` — fixed + documented the Kitty Nerd Font `Mono`
+  variant gotcha.
+- `f7b83f1` — brought `.zshrc` under Home Manager; see the dedicated
+  section above for the full mapping and migration mechanics.
