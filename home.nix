@@ -45,6 +45,7 @@
   programs.kitty = {
     enable = true;
     shellIntegration.enableZshIntegration = true;
+    themeFile = "gruvbox-dark";
     settings = {
       font_family = "FiraCode Nerd Font";
       font_size = 14.0;
