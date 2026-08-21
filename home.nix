@@ -56,10 +56,27 @@
     };
   };
 
-  # zsh itself isn't managed by Home Manager here, so shell integration is
-  # wired up by hand with a line appended to ~/.zshrc rather than via
-  # enableZshIntegration (which only works when programs.zsh.enable = true).
+  # zsh itself isn't managed by Home Manager here, so shell integration for
+  # both of these is wired up by hand with lines appended to ~/.zshrc rather
+  # than via enableZshIntegration (which only works when
+  # programs.zsh.enable = true).
   programs.zoxide.enable = true;
+
+  programs.starship = {
+    enable = true;
+    # Starship's official "Tokyo Night" preset, fetched verbatim and parsed
+    # rather than hand-transcribed, so the glyphs/colors stay byte-accurate
+    # to the upstream preset (https://starship.rs/presets/#tokyo-night) and
+    # match the Kitty/Neovim theme.
+    settings = builtins.fromTOML (
+      builtins.readFile (
+        pkgs.fetchurl {
+          url = "https://starship.rs/presets/toml/tokyo-night.toml";
+          sha256 = "sha256-Krwj7CJ3wd4xoWuZjADDyq4EGEDF1orvFaBDdCTrhO0=";
+        }
+      )
+    );
+  };
 
   programs.home-manager.enable = true;
 }
