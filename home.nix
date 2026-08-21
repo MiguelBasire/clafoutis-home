@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 {
   home.username = "miguel";
@@ -12,12 +12,13 @@
   # for icons, and node/python/unzip/make for mason.nvim installers.
   # A C compiler for treesitter parsers comes from Xcode Command Line
   # Tools (already installed), so it's intentionally not listed here.
+  # fzf itself is installed via programs.fzf below (not listed here) so its
+  # module can also own the package version.
   home.packages = with pkgs; [
     neovim
     git
     ripgrep
     fd
-    fzf
     lazygit
     bat
     btop
@@ -40,7 +41,19 @@
 
   home.sessionVariables = {
     EDITOR = "nvim";
+    # Was a per-shell `export` in the hand-written ~/.zshrc before zsh was
+    # brought under Home Manager; moved here so it applies universally
+    # (any HM-managed shell), not just zsh. Load-bearing: without it, the
+    # `nix` CLI itself refuses flake/`nix build`-style commands, since
+    # /etc/nix/nix.conf doesn't enable these features globally on this
+    # machine.
+    NIX_CONFIG = "extra-experimental-features = nix-command flakes";
   };
+
+  # Was `export PATH="$HOME/.local/bin:$PATH"` in the hand-written ~/.zshrc.
+  home.sessionPath = [
+    "${config.home.homeDirectory}/.local/bin"
+  ];
 
   programs.kitty = {
     enable = true;
@@ -63,23 +76,17 @@
     };
   };
 
-  # zsh itself isn't managed by Home Manager here, so shell integration for
-  # these is wired up by hand with lines appended to ~/.zshrc rather than
-  # via enableZshIntegration (which only works when programs.zsh.enable =
-  # true).
-  programs.zoxide.enable = true;
-
-  # zsh-autosuggestions (ghost-text history suggestions) and fzf-tab (fuzzy
-  # Tab-completion menu). Symlinked to a fixed path rather than sourced
-  # straight from the Nix store, so the `source` line appended to ~/.zshrc
-  # never has to change when the store path's hash changes on update.
-  home.file.".local/share/zsh-plugins/zsh-autosuggestions.zsh".source =
-    "${pkgs.zsh-autosuggestions}/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh";
-  home.file.".local/share/zsh-plugins/fzf-tab.plugin.zsh".source =
-    "${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh";
+  # zsh is Home Manager's now (below), so every one of these gets its
+  # normal, first-class enableZshIntegration instead of a hand-appended
+  # ~/.zshrc line.
+  programs.zoxide = {
+    enable = true;
+    enableZshIntegration = true;
+  };
 
   programs.starship = {
     enable = true;
+    enableZshIntegration = true;
     # Starship's official "Gruvbox Rainbow" preset, fetched verbatim and
     # parsed rather than hand-transcribed, so the glyphs/colors stay
     # byte-accurate to the upstream preset
@@ -92,6 +99,50 @@
         }
       )
     );
+  };
+
+  # fzf's own Ctrl+R (history search) and Ctrl+T / **<Tab> (fuzzy file
+  # insertion) keybindings — previously unavailable since they're also
+  # gated behind zsh integration.
+  programs.fzf = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    # Ghost-text history suggestions.
+    autosuggestion.enable = true;
+    # Fuzzy Tab-completion menu. Home Manager sources plugins (mkOrder 900)
+    # after enableCompletion's compinit (570) and autosuggestion (700), so
+    # the ordering fzf-tab needs is automatic here — no more hand-managed
+    # fixed-path symlink workaround.
+    plugins = [
+      {
+        name = "fzf-tab";
+        src = pkgs.zsh-fzf-tab;
+        file = "share/fzf-tab/fzf-tab.plugin.zsh";
+      }
+    ];
+    # Preserves the Nix multi-user installer's shell bootstrap (profile
+    # sourcing, daemon env) exactly as it was in the hand-written
+    # ~/.zshrc before this migration — Home Manager emits it now instead
+    # of it being manually maintained. mkOrder 500 keeps it early,
+    # mirroring its original position at the top of the file.
+    initContent = lib.mkOrder 500 ''
+      if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+        . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+      fi
+
+      if [ -e "$HOME/.nix-profile/etc/profile.d/nix-daemon.sh" ]; then
+        . "$HOME/.nix-profile/etc/profile.d/nix-daemon.sh"
+      fi
+
+      if [ -e "$HOME/.nix-defexpr/profile" ] && [ -z "''${NIX_PATH+x}" ]; then
+        export NIX_PATH="$HOME/.nix-defexpr/channels"
+      fi
+    '';
   };
 
   programs.home-manager.enable = true;
