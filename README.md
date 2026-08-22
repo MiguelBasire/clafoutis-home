@@ -83,16 +83,29 @@ pins exact package versions.
   metrics).
 
 - **QWERTY-fr keyboard layout** ([qwerty-fr/qwerty-fr](https://github.com/qwerty-fr/qwerty-fr),
-  MIT, pinned to a specific commit via `pkgs.fetchFromGitHub`). Installed as
-  `home.file."Library/Keyboard Layouts/qwerty-fr.bundle"` with
-  `recursive = true`, same per-file-symlink pattern as `nvim/`. Installing
-  the file is the only part Home Manager handles — actually *selecting* it
-  as an input source is a one-time manual step (System Settings > Keyboard
-  > Input Sources > + > Others > qwerty-fr, may need a logout to show up),
-  since that lives in `~/Library/Preferences/com.apple.HIToolbox.plist`,
-  which macOS caches in `cfprefsd` and doesn't reliably pick up from a
-  file written outside a logged-in session. Not worth fighting that for a
-  single-machine, one-time toggle.
+  MIT, pinned to a specific commit via `pkgs.fetchFromGitHub`). **Not** a
+  `home.file` entry, unlike everything else here — that was tried first
+  (per-file symlinks into `/nix/store`, same pattern as `nvim/`) and the
+  layout never appeared in System Settings' Input Sources picker, even
+  after a logout. Root cause: the picker doesn't discover a keyboard
+  layout bundle whose contents are symlinks into the (`nobrowse`) Nix
+  store — the same class of problem `mac-app-util` exists to solve for
+  GUI `.app` bundles, just hitting a different macOS subsystem. Fix is
+  `home.activation.installQwertyFrLayout`, which `cp -RL`'s the fetched
+  bundle into `~/Library/Keyboard Layouts/` as real files on every
+  activation (then `chmod -R u+w`, since `cp -RL` otherwise preserves the
+  Nix store's read-only mode, which blocks the *next* activation's own
+  cleanup `rm -rf`).
+
+  Confirmed working after a **full restart** — a logout/login was not
+  enough for System Settings to pick up the newly-real files. (A
+  separate, unrelated macOS fault showed up during this same debugging
+  session — `osacompile` refusing to compile any AppleScript "Standard
+  Additions" command like `do shell script`, which broke `mac-app-util`'s
+  Kitty trampoline regeneration mid-activation. Also cleared by the same
+  restart. If `./result/activate` ever dies inside `trampolineApps` with
+  an AppleScript compilation error, that's this — restart the Mac, don't
+  debug the Nix config.)
 
 - **`mac-app-util`** (flake input + Home Manager module). Fixes a
   Nix-on-macOS-specific problem: `/nix` is mounted as its own APFS volume

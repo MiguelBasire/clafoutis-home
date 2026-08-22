@@ -93,6 +93,20 @@ Two things `checkhealth` alone won't catch:
 
 ## Working conventions specific to this repo
 
+- **Don't default to `home.file` for anything a macOS *system* picker needs
+  to discover** (Input Sources, and presumably similar system UIs) —
+  `home.file`'s symlinks-into-`/nix/store` are invisible to at least the
+  Keyboard Input Sources picker, the same class of problem `mac-app-util`
+  exists to solve for Spotlight/Launchpad and GUI `.app` bundles.
+  `home.activation.installQwertyFrLayout` in `home.nix` is the workaround
+  pattern: `cp -RL` real files into place on every activation, then
+  `chmod -R u+w` (required — `cp -RL` otherwise carries over the Nix
+  store's read-only mode, which then blocks the *next* activation's
+  cleanup). See the QWERTY-fr entry in `README.md` for the full story,
+  including that a full **restart** (not just logout) was needed before
+  System Settings picked it up, and an unrelated `osacompile`/AppleScript
+  fault that showed up during the same debugging session and cleared on
+  its own after that same restart.
 - Packages `bat`, `btop`, `fd`, `fzf`, `lazygit`, `neovim`, `ripgrep` used to
   be installed imperatively via `nix profile install`; they were removed
   from that profile (`nix profile remove`) when brought into `home.nix`, to
