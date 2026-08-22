@@ -82,6 +82,18 @@ pins exact package versions.
   guarantees fixed-width glyphs instead of the plain family's proportional
   metrics).
 
+- **QWERTY-fr keyboard layout** ([qwerty-fr/qwerty-fr](https://github.com/qwerty-fr/qwerty-fr),
+  MIT, pinned to a specific commit via `pkgs.fetchFromGitHub`). Installed as
+  `home.file."Library/Keyboard Layouts/qwerty-fr.bundle"` with
+  `recursive = true`, same per-file-symlink pattern as `nvim/`. Installing
+  the file is the only part Home Manager handles — actually *selecting* it
+  as an input source is a one-time manual step (System Settings > Keyboard
+  > Input Sources > + > Others > qwerty-fr, may need a logout to show up),
+  since that lives in `~/Library/Preferences/com.apple.HIToolbox.plist`,
+  which macOS caches in `cfprefsd` and doesn't reliably pick up from a
+  file written outside a logged-in session. Not worth fighting that for a
+  single-machine, one-time toggle.
+
 - **`mac-app-util`** (flake input + Home Manager module). Fixes a
   Nix-on-macOS-specific problem: `/nix` is mounted as its own APFS volume
   with the `nobrowse` flag, so Spotlight's indexer skips everything under it

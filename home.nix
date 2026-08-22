@@ -44,6 +44,25 @@
     recursive = true;
   };
 
+  # QWERTY-fr: a QWERTY-based keyboard layout with French accents
+  # (https://github.com/qwerty-fr/qwerty-fr), pinned to a specific commit.
+  # Installing the bundle only puts the *file* in place; macOS still needs
+  # a one-time manual step to activate it: System Settings > Keyboard >
+  # Input Sources > + > Others > qwerty-fr (may need a logout to appear).
+  # That activation step lives in ~/Library/Preferences/com.apple.HIToolbox.plist,
+  # which isn't something Home Manager manages here.
+  home.file."Library/Keyboard Layouts/qwerty-fr.bundle" = {
+    source = "${
+      pkgs.fetchFromGitHub {
+        owner = "qwerty-fr";
+        repo = "qwerty-fr";
+        rev = "812e3c14e8366bb211688fe0c494f34a8e39885d";
+        hash = "sha256-iXme/Edv2eG8WP58GXbFzUfVqr26Lu7lgJzGq21iE2E=";
+      }
+    }/mac/bundle/qwerty-fr.bundle";
+    recursive = true;
+  };
+
   home.sessionVariables = {
     EDITOR = "nvim";
     # Was a per-shell `export` in the hand-written ~/.zshrc before zsh was
