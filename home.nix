@@ -159,6 +159,27 @@
     enableCompletion = true;
     # Ghost-text history suggestions.
     autosuggestion.enable = true;
+    shellAliases = {
+      gs = "git status";
+      ga = "git add";
+      gaa = "git add --all";
+      gc = "git commit";
+      gcm = "git commit -m";
+      gca = "git commit --amend";
+      gco = "git checkout";
+      gcb = "git checkout -b";
+      gb = "git branch";
+      gd = "git diff";
+      gds = "git diff --staged";
+      gp = "git push";
+      gpl = "git pull";
+      gl = "git log --oneline --graph --decorate";
+      gla = "git log --oneline --graph --decorate --all";
+      gst = "git stash";
+      gstp = "git stash pop";
+      grb = "git rebase";
+      grbi = "git rebase -i";
+    };
     # Fuzzy Tab-completion menu. Home Manager sources plugins (mkOrder 900)
     # after enableCompletion's compinit (570) and autosuggestion (700), so
     # the ordering fzf-tab needs is automatic here — no more hand-managed
