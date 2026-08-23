@@ -53,15 +53,29 @@ pins exact package versions.
   config and removed from the imperative profile (`nix profile remove`) so
   there's one source of truth instead of two overlapping ones.
 
-- **`gh`** (GitHub CLI) and **`acli`** (Atlassian's official CLI, covering
-  Bitbucket Cloud/bitbucket.org). nixpkgs also has a `bitbucket-cli`
-  package, but that one only talks to self-hosted Bitbucket Server/Data
-  Center's REST API, not bitbucket.org — not what's wanted here, so it was
-  swapped for `acli`. `acli` ships under an unfree license, which
-  `flake.nix` allows via a `config.allowUnfreePredicate` scoped to just
-  that package name (not a blanket `allowUnfree = true`), so any other
-  unfree package added later still fails loudly instead of silently
-  slipping through.
+- **`gh`** (GitHub CLI, from nixpkgs) and **`bbt`** (Bitbucket Cloud CLI,
+  custom-packaged — see below).
+
+  Getting to `bbt` took two wrong turns, worth recording so they don't get
+  repeated:
+  1. nixpkgs' `bitbucket-cli` package only talks to self-hosted Bitbucket
+     Server/Data Center's REST API, not bitbucket.org (cloud).
+  2. `acli` (Atlassian's own official CLI) looked right from its homepage
+     (`developer.atlassian.com/cloud/acli`), but `acli --help` shows it
+     only covers Jira, Confluence, Guard, admin, and Rovo Dev — **no
+     Bitbucket subcommand at all**. It got added anyway on the strength of
+     the homepage URL alone, without checking the actual command surface
+     first; that was the mistake. (This did also require scoping
+     `config.allowUnfreePredicate` to `acli` in `flake.nix`, since it's
+     unfree-licensed — all reverted along with removing the package.)
+
+  `bbt` ([romaintb/bbt](https://codeberg.org/romaintb/bbt), MIT, Go) is a
+  small, actively-maintained, purpose-built "`gh` for Bitbucket" — not in
+  nixpkgs, so it's packaged directly in `home.nix` via `pkgs.buildGoModule`
+  + `pkgs.fetchgit` against Codeberg (Gitea-hosted, hence `fetchgit` rather
+  than `fetchFromGitHub`), pinned to a commit with both `src.hash` and
+  `vendorHash` recorded. Supports Bitbucket personal access tokens, not
+  just the app passwords Atlassian is deprecating through 2026.
 
 - **Kitty** (`programs.kitty`). Config is generated to
   `~/.config/kitty/kitty.conf` from the `settings` block in `home.nix` — edit
@@ -201,3 +215,7 @@ manual `cp`/`rm` instead.
   this repo — hashes referenced above are current as of the second
   rewrite; anything cited elsewhere (issues, old clones, etc.) predating
   it won't resolve.
+- Swapped `acli` for `bbt` (custom-packaged) after discovering `acli` has
+  no Bitbucket support at all — see the `gh`/`bbt` entry above for the
+  full story. Also reverted the `config.allowUnfreePredicate` scoping in
+  `flake.nix` that `acli` had required.

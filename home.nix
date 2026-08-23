@@ -1,5 +1,28 @@
 { config, lib, pkgs, ... }:
 
+let
+  # Bitbucket Cloud CLI ("gh for Bitbucket"). Not in nixpkgs, so packaged
+  # directly from source, pinned to a commit. Replaced acli (Atlassian's
+  # own official CLI) here after discovering acli has no Bitbucket
+  # subcommand at all (Jira/Confluence/Guard/admin/rovodev only) --
+  # checked via `acli --help`, not just its homepage, this time.
+  bbt = pkgs.buildGoModule {
+    pname = "bbt";
+    version = "0-unstable-2025-12-18";
+    src = pkgs.fetchgit {
+      url = "https://codeberg.org/romaintb/bbt.git";
+      rev = "07597ca2806eb0b1540b2dd8278c7c85dc794ccf";
+      hash = "sha256-Ds2liO5Ju7dDpgiWLk8G3clkDV6LbhunhjDvm7NAYCQ=";
+    };
+    vendorHash = "sha256-6eG5ru0cnoy7Oh5GtrHbBAt2D5MAe+OgJVZlBrY6/l4=";
+    meta = {
+      description = "Bitbucket Cloud CLI (\"gh for Bitbucket\")";
+      homepage = "https://codeberg.org/romaintb/bbt";
+      license = lib.licenses.mit;
+      mainProgram = "bbt";
+    };
+  };
+in
 {
   home.username = "miguel";
   home.homeDirectory = "/Users/miguel";
@@ -29,10 +52,7 @@
     gnumake
     nerd-fonts.fira-code
     gh
-    # Atlassian's official CLI — covers Bitbucket Cloud (bitbucket.org).
-    # nixpkgs also has a `bitbucket-cli` package, but that one only talks to
-    # self-hosted Bitbucket Server/Data Center's REST API, not bitbucket.org.
-    acli
+    bbt
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).
