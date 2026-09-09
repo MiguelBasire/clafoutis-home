@@ -1,33 +1,90 @@
 # Home Manager config
 
 Standalone [Home Manager](https://nix-community.github.io/home-manager/) setup
-for this Mac — no `nix-darwin`, just a flake that manages a chunk of the user
+— no `nix-darwin`, no NixOS, just a flake that manages a chunk of the user
 environment declaratively. Started as "configure Neovim with LazyVim through
-Nix" and grew from there.
+Nix" on a Mac, and now covers two machines.
+
+| Configuration | System | Machine |
+|---|---|---|
+| `miguel@mac` (alias: `miguel`) | `aarch64-darwin` | the MacBook |
+| `miguel@clafoutis02` | `x86_64-linux` | TUXEDO laptop, Regolith/sway on Wayland |
 
 ## Layout
 
 ```
-flake.nix   -- inputs (nixpkgs, home-manager, mac-app-util) and the
-               homeConfigurations."miguel" output
-home.nix    -- everything that's actually managed: packages, Neovim config
-               wiring, Kitty, zoxide
-nvim/       -- the LazyVim starter template, git-tracked here, symlinked
-               file-by-file into ~/.config/nvim
+flake.nix     -- inputs and the homeConfigurations outputs for both machines
+common.nix    -- everything genuinely shared: packages, Neovim wiring, zsh,
+                 zoxide/fzf/starship, the platform-neutral Kitty settings
+darwin.nix    -- macOS only: QWERTY-fr layout, Gruvbox theming, Fira Code,
+                 the macOS Nix shell bootstrap
+linux.nix     -- Linux only: fontconfig, Nord theming, Monoid, the Linux Nix
+                 shell bootstrap
+nvim/         -- the LazyVim starter template, shared by both machines,
+                 symlinked file-by-file into ~/.config/nvim
+nvim-darwin/  -- Neovim plugin specs layered on top of nvim/ on macOS only
+nvim-linux/   -- Neovim plugin specs layered on top of nvim/ on Linux only
 ```
 
 ## Applying changes
 
+On the Mac:
+
 ```sh
-cd ~/.config/home-manager
-nix build .#homeConfigurations.miguel.activationPackage -L
+nix build .#homeConfigurations."miguel@mac".activationPackage -L
 ./result/activate
 ```
 
-(Equivalent to `home-manager switch --flake .#miguel`, just via the flake's
+On clafoutis02:
+
+```sh
+nix build .#homeConfigurations."miguel@clafoutis02".activationPackage -L
+./result/activate
+```
+
+(Equivalent to `home-manager switch --flake .#miguel@mac`, just via the flake's
 own build output so it doesn't depend on the `home-manager` CLI already being
 on `PATH`.) Commit `flake.lock` changes along with the rest — that's what
 pins exact package versions.
+
+## What is deliberately *not* shared
+
+The split exists because the two machines genuinely diverge. Adding something
+to `common.nix` that only makes sense on one of them is the main way to break
+this repo.
+
+| | macOS | clafoutis02 |
+|---|---|---|
+| Terminal theme | Gruvbox Dark | Nord |
+| Terminal font | FiraCode Nerd Font Mono 14 | Monoid Nerd Font 10 |
+| Neovim colorscheme | gruvbox (`nvim-darwin/`) | LazyVim default (no override) |
+| Starship palette | upstream Gruvbox Rainbow | same preset, slate/blue palette |
+| Extra Neovim plugins | — | Kotlin LSP swap, nvim-metals, nvim-training |
+| QWERTY-fr | `~/Library/Keyboard Layouts` bundle | XKB, via `~/.config/sway/install.sh` |
+| Fonts | linked automatically by HM | needs `fonts.fontconfig.enable` |
+
+### The Linux scope boundary
+
+`linux.nix` owns the **CLI / editor / terminal** layer only. The
+**window-manager** layer — XKB symbol files, Regolith `sway/config.d`
+partials, and the `~/.local/bin` helper scripts (`rescan-displays`,
+`dock-diag`, `screenshot`) — stays with `~/.config/sway/install.sh`, which
+deploys it imperatively.
+
+Do not add a `programs.sway` block. Regolith starts sway with
+`sway -c /etc/regolith/sway/config` and never reads `~/.config/sway/config`,
+so Home Manager would generate a file nothing loads. (An abandoned Home
+Manager generation on that machine did exactly this — it is still in the
+store, unactivated.)
+
+### `acli` and the unfree predicate
+
+`acli` is unfree, and nixpkgs packages it differently per platform: on Darwin
+the unfree derivation is `acli` itself, but on Linux `acli` is a `buildFHSEnv`
+wrapper around `acli-unwrapped`, and it is the *inner* derivation that carries
+the license. `flake.nix` therefore allows **both** names. Listing only `"acli"`
+evaluates fine on the Mac and fails on Linux with `Refusing to evaluate package
+'acli-unwrapped-...'`.
 
 ## What's managed and why
 
@@ -64,7 +121,8 @@ pins exact package versions.
   slipping through.
 
 - **Kitty** (`programs.kitty`). Config is generated to
-  `~/.config/kitty/kitty.conf` from the `settings` block in `home.nix` — edit
+  `~/.config/kitty/kitty.conf` from the `settings` blocks in `common.nix` and
+  the per-host file — edit
   it there, not the generated file directly, or changes get overwritten on
   the next switch. Font is pinned to the same Nerd Font Neovim uses. Zsh
   shell integration (jump-to-prompt, cursor shape, cwd tracking) is turned
@@ -132,11 +190,11 @@ As of the "Bring `.zshrc` under Home Manager" commit (see History),
 `.zshenv`/`.zprofile`) are generated files — symlinks into `/nix/store`, same
 as `kitty.conf` and `~/.config/nvim`. **Don't hand-edit `.zshrc` anymore** —
 it gets silently overwritten on the next `./result/activate`. Everything
-that used to be a manual line lives in `home.nix` now:
+that used to be a manual line lives in `common.nix` (or a per-host file) now:
 
-| What | Where in `home.nix` |
+| What | Where |
 |---|---|
-| Nix multi-user installer's shell bootstrap (`nix.sh`, `nix-daemon.sh`, `NIX_PATH` fallback) | `programs.zsh.initContent` at `lib.mkOrder 500`, preserved verbatim from the original hand-written block |
+| Nix multi-user installer's shell bootstrap (`nix.sh`, `nix-daemon.sh`, `NIX_PATH` fallback) | `programs.zsh.initContent` at `lib.mkOrder 500` — **per host**, since the macOS and Linux installers lay their profile scripts down in different places. `darwin.nix` preserves the original hand-written block verbatim; `linux.nix` sources `/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` instead |
 | `PATH="$HOME/.local/bin:$PATH"` | `home.sessionPath` |
 | `NIX_CONFIG="extra-experimental-features = nix-command flakes"` | `home.sessionVariables` (moved here from a zsh-only export — now applies to *any* HM-managed shell, and is load-bearing: without it `nix build`/`nix flake` refuse to run, since `/etc/nix/nix.conf` doesn't enable those features globally on this machine) |
 | `autoload -Uz compinit; compinit` | `programs.zsh.enableCompletion = true;` |
@@ -201,3 +259,12 @@ manual `cp`/`rm` instead.
   this repo — hashes referenced above are current as of the second
   rewrite; anything cited elsewhere (issues, old clones, etc.) predating
   it won't resolve.
+- **The multi-system split.** `flake.nix` grew a second
+  `homeConfigurations` entry for `x86_64-linux`, and `home.nix` was broken up
+  into `common.nix` + `darwin.nix` + `linux.nix`. Four things blocked the
+  Linux configuration outright before the split: the hardcoded
+  `aarch64-darwin` system, the hardcoded `/Users/miguel` home directory, the
+  Darwin-only `mac-app-util` module, and the `~/Library/Keyboard Layouts`
+  activation script. A fifth, subtler one was the `allowUnfreePredicate`
+  missing `acli-unwrapped` (see above). `homeConfigurations."miguel"` is kept
+  as an alias for `"miguel@mac"` so the old command line still resolves.

@@ -5,19 +5,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 A standalone [Home Manager](https://nix-community.github.io/home-manager/)
-flake managing a slice of this macOS user's environment — no `nix-darwin`.
-Started as "Neovim/LazyVim via Nix" and grew to include Kitty and a handful
-of CLI tools. Full rationale and history are in `README.md`; this file is
-the quick-reference for making changes.
+flake managing a slice of this user's environment on **two machines** — no
+`nix-darwin`, no NixOS. Started as "Neovim/LazyVim via Nix" on a Mac and grew
+to include Kitty, zsh and a handful of CLI tools; a second configuration for
+an x86_64-linux laptop (Regolith/sway) was added later. Full rationale and
+history are in `README.md`; this file is the quick-reference for making
+changes.
+
+Two outputs: `homeConfigurations."miguel@mac"` (`aarch64-darwin`, aliased as
+`"miguel"`) and `homeConfigurations."miguel@clafoutis02"` (`x86_64-linux`).
 
 ## Commands
 
-Apply any change to `home.nix` or `nvim/` — nothing takes effect until this
-runs:
+Apply any change to the `.nix` files or `nvim/` — nothing takes effect until
+this runs. Name the configuration for the machine you are on:
 
 ```sh
-nix build .#homeConfigurations.miguel.activationPackage -L
+# macOS
+nix build .#homeConfigurations."miguel@mac".activationPackage -L
 ./result/activate
+
+# clafoutis02
+nix build .#homeConfigurations."miguel@clafoutis02".activationPackage -L
+./result/activate
+```
+
+Only one of the two can be *built* on a given machine, but both can be
+**evaluated** anywhere, which is enough to catch most mistakes:
+
+```sh
+nix eval .#homeConfigurations."miguel@mac".config.home.homeDirectory
 ```
 
 Update flake inputs (`nixpkgs`, `home-manager`, `mac-app-util`) and commit
@@ -55,16 +72,23 @@ Two things `checkhealth` alone won't catch:
 ## Architecture
 
 - `flake.nix` — inputs (`nixpkgs-unstable`, `home-manager`, `mac-app-util`)
-  and the single `homeConfigurations."miguel"` output. `system` is
-  hardcoded to `"aarch64-darwin"`, not parameterized. `pkgs` is built with
-  `import nixpkgs { inherit system; config.allowUnfreePredicate = ...; }`
-  rather than plain `nixpkgs.legacyPackages.${system}`, scoped to allow
-  just `acli` (unfree-licensed). Adding another unfree package means adding
-  its name to that predicate's list, not flipping on `allowUnfree = true`
-  wholesale.
-- `home.nix` — all managed state: `home.packages` (CLI tools), the
-  `home.file` entry that wires up `nvim/`, and `programs.{kitty,zsh,zoxide,
-  starship,fzf}`.
+  and both `homeConfigurations` outputs, built through `mkPkgs` / `mkHome`
+  helpers. `pkgs` is built with `import nixpkgs { inherit system;
+  config.allowUnfreePredicate = ...; }` rather than plain
+  `nixpkgs.legacyPackages.${system}`, scoped to allow just `acli` (unfree).
+  Adding another unfree package means adding its name to that predicate's
+  list, not flipping on `allowUnfree = true` wholesale. **The predicate
+  lists both `"acli"` and `"acli-unwrapped"`** — nixpkgs FHS-wraps `acli` on
+  Linux and it is the inner derivation that carries the license, so listing
+  only `"acli"` evaluates on Darwin and fails on Linux.
+- `common.nix` — everything genuinely shared: `home.packages`, the
+  `home.file` entry that wires up `nvim/`, `programs.{zsh,zoxide,starship,
+  fzf}`, and the platform-neutral half of `programs.kitty`.
+- `darwin.nix` / `linux.nix` — the per-host halves: home directory, Kitty
+  font+theme, the Nix shell bootstrap (different paths per installer), the
+  per-host Neovim overlays, and each platform's keyboard/font handling.
+  **`mac-app-util` is imported only by the macOS module list**, since it
+  builds its trampolines with `osacompile`.
 - `nvim/` — the LazyVim starter template, git-tracked here. Wired into
   `~/.config/nvim` via `home.file` with `recursive = true`, which symlinks
   each file individually rather than symlinking the whole directory in one
@@ -72,6 +96,13 @@ Two things `checkhealth` alone won't catch:
   `lazy-lock.json` inside `~/.config/nvim` at runtime, which only works if
   the directory itself is real (not a symlink into the read-only Nix
   store).
+- `nvim-darwin/` and `nvim-linux/` — per-host plugin specs layered on top of
+  `nvim/` as individual `home.file` entries targeting
+  `.config/nvim/lua/plugins/<name>.lua`. `lazy.nvim` merges everything it
+  finds under `lua/plugins/`, so extra files just work. This is how the two
+  machines keep different colorschemes and language tooling while sharing one
+  starter config. Note `nvim/lua/plugins/` holds only what is wanted on
+  *both*.
 - LazyVim's plugins are **not** Nix-managed — `lazy.nvim` installs/updates
   its own plugins under `~/.local/share/nvim`, independent of this flake.
   Nix's job is limited to supplying the `neovim` binary, LazyVim's runtime
@@ -85,7 +116,7 @@ Two things `checkhealth` alone won't catch:
   `~/Applications`.
 - `~/.zshrc` (plus `.zshenv`/`.zprofile`) **is** managed here
   (`programs.zsh.enable = true`) — generated, same rule as `kitty.conf`
-  below: don't hand-edit it, changes go in `home.nix`'s `programs.zsh`
+  below: don't hand-edit it, changes go in `common.nix`'s `programs.zsh`
   block and get overwritten on the next activate. `zoxide`/`starship`/`fzf`
   all use real `enableZshIntegration = true` rather than hand-appended
   `eval` lines. See the `~/.zshrc is Home Manager's` section of `README.md`
@@ -98,7 +129,7 @@ Two things `checkhealth` alone won't catch:
   `home.file`'s symlinks-into-`/nix/store` are invisible to at least the
   Keyboard Input Sources picker, the same class of problem `mac-app-util`
   exists to solve for Spotlight/Launchpad and GUI `.app` bundles.
-  `home.activation.installQwertyFrLayout` in `home.nix` is the workaround
+  `home.activation.installQwertyFrLayout` in `darwin.nix` is the workaround
   pattern: `cp -RL` real files into place on every activation, then
   `chmod -R u+w` (required — `cp -RL` otherwise carries over the Nix
   store's read-only mode, which then blocks the *next* activation's
@@ -109,20 +140,36 @@ Two things `checkhealth` alone won't catch:
   its own after that same restart.
 - Packages `bat`, `btop`, `fd`, `fzf`, `lazygit`, `neovim`, `ripgrep` used to
   be installed imperatively via `nix profile install`; they were removed
-  from that profile (`nix profile remove`) when brought into `home.nix`, to
+  from that profile (`nix profile remove`) when brought into `common.nix`, to
   avoid two overlapping sources of truth. Don't reintroduce a package here
   that's also sitting in the imperative profile — check `nix profile list`
   first if unsure.
 - Edit `~/.config/kitty/kitty.conf` never directly — it's generated from the
-  `programs.kitty.settings` block in `home.nix` and gets overwritten on the
+  `programs.kitty.settings` blocks in `common.nix` + `darwin.nix`/`linux.nix`
+  and gets overwritten on the
   next `./result/activate`. Same rule for `~/.zshrc`/`.zshenv`/`.zprofile`
   and anything else under `home.file` or a `programs.*` module.
-- New files under `nvim/` (or anywhere else referenced by a local path in
-  the flake) must be `git add`ed before `nix build` — flakes only copy
+- New files under `nvim/`, `nvim-darwin/`, `nvim-linux/` (or anywhere else
+  referenced by a local path in the flake) must be `git add`ed before
+  `nix build` — flakes only copy
   git-tracked content into the store when evaluating a local flake, so an
   untracked file is silently invisible to the build until staged. Bit us
   once already: `nvim/lua/plugins/colorscheme.lua` didn't take effect until
   `git add`ed, even though the build succeeded.
 - Nerd Font `font_family` values in `programs.kitty.settings` must use the
   **`Mono`** variant (e.g. `"FiraCode Nerd Font Mono"`), not the plain
-  family name — see `README.md` for why.
+  family name — **on macOS**; see `README.md` for why, and the Linux note
+  below.
+- **Anything Linux-only that touches the window manager does not belong
+  here.** `linux.nix` owns the CLI/editor/terminal layer; XKB symbol files,
+  Regolith `sway/config.d` partials and the `~/.local/bin` helper scripts are
+  deployed imperatively by `~/.config/sway/install.sh` on that machine. Never
+  add a `programs.sway` block: Regolith runs `sway -c
+  /etc/regolith/sway/config` and never reads `~/.config/sway/config`.
+- **On Linux, a font in `home.packages` is invisible without
+  `fonts.fontconfig.enable = true`** (set in `linux.nix`). macOS links fonts
+  into `~/Library/Fonts` on its own; Linux does not, and the symptom is
+  silent — Kitty falls back and every Nerd Font glyph renders as tofu.
+- **Kitty's Nerd Font `Mono`-variant gotcha is macOS-only.** It is a CoreText
+  resolution failure; under fontconfig the plain family resolves fine, so
+  `linux.nix` deliberately does not mirror the workaround.
