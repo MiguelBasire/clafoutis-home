@@ -65,6 +65,193 @@ let
       outputs = map (o: o // { status = "enable"; }) outputs;
     };
   };
+
+  # Keybindings: a port of Regolith 3.4's /usr/share/regolith/{common,sway}/
+  # config.d partials (snapshot in ~/.config/regolith-snapshot), with the
+  # Regolith-only programs swapped for plain equivalents — the comment on
+  # each group names the partial it comes from. This *replaces* Home
+  # Manager's i3-style defaults rather than extending them: those put layout
+  # commands on $mod+w/b/d/e/s, which Regolith uses for settings.
+
+  # Workspace n (1-19) is on key n for 1-9, 0 for 10, Ctrl + 1-9 for 11-19
+  # (Regolith's wm.workspace.NN.key / $ws_high_key).
+  workspaces =
+    lib.imap1 (n: key: { inherit n key; }) [ "1" "2" "3" "4" "5" "6" "7" "8" "9" "0" ]
+    ++ lib.imap1 (n: key: { n = n + 10; key = "Ctrl+${key}"; })
+      [ "1" "2" "3" "4" "5" "6" "7" "8" "9" ];
+  # common/40_workspace-config: go / move window (Shift) / carry window (Alt).
+  workspaceKeys = lib.listToAttrs (lib.concatMap
+    ({ n, key }:
+      let ws = "workspace number ${toString n}"; in [
+        (lib.nameValuePair "${mod}+${key}" ws)
+        (lib.nameValuePair "${mod}+Shift+${key}" "move container to ${ws}")
+        (lib.nameValuePair "${mod}+Mod1+${key}" "move container to ${ws}; ${ws}")
+      ])
+    workspaces);
+
+  # focus/move/resize in all four directions, on both hjkl and the arrows.
+  dirs = {
+    left = [ "h" "Left" ];
+    down = [ "j" "Down" ];
+    up = [ "k" "Up" ];
+    right = [ "l" "Right" ];
+  };
+  directionalKeys = lib.concatMapAttrs (dir: keys: lib.listToAttrs (lib.concatMap
+    (k: [
+      (lib.nameValuePair "${mod}+${k}" "focus ${dir}")
+      (lib.nameValuePair "${mod}+Shift+${k}" "move ${dir}")
+      (lib.nameValuePair "${mod}+Ctrl+Shift+${k}" "move workspace to output ${dir}")
+    ])
+    keys)) dirs;
+
+  keys = workspaceKeys // directionalKeys // {
+    # common/15_base_launchers (+ the terminal override in
+    # ~/.config/regolith3/common-wm). systemd-run gives each app its own
+    # scope, as Regolith does.
+    "${mod}+Return" = "exec systemd-run --user --scope kitty";
+    "${mod}+Shift+Return" =
+      "exec systemd-run --user --scope gtk-launch $(xdg-settings get default-web-browser)";
+    # Not in Regolith: a terminal that works without the GPU setup.
+    "${mod}+Ctrl+Return" = "exec foot";
+
+    # common/30_navigation.
+    "${mod}+a" = "focus parent";
+    "${mod}+z" = "focus child";
+    "${mod}+Tab" = "workspace next";
+    "${mod}+Mod1+Right" = "workspace next";
+    "${mod}+Ctrl+Tab" = "workspace next_on_output";
+    "${mod}+Ctrl+l" = "workspace next_on_output";
+    "${mod}+Shift+Tab" = "workspace prev";
+    "${mod}+Mod1+Left" = "workspace prev";
+    "${mod}+Ctrl+Shift+Tab" = "workspace prev_on_output";
+    "${mod}+Ctrl+h" = "workspace prev_on_output";
+    "${mod}+Ctrl+a" = "scratchpad show";
+
+    # common/40_i3-swap-focus: last focused window. swayr stands in for
+    # i3-swap-focus, which is Regolith-only.
+    "${mod}+period" = "exec swayr switch-to-urgent-or-lru-window";
+
+    # common/40_workspace-config (non-workspace part).
+    "${mod}+v" = "split vertical";
+    "${mod}+g" = "split horizontal";
+    "${mod}+BackSpace" = "split toggle";
+    "${mod}+f" = "fullscreen toggle";
+    "${mod}+Shift+f" = "floating toggle";
+    "${mod}+Ctrl+m" = "move to scratchpad";
+    "${mod}+Shift+t" = "focus mode_toggle";
+    "${mod}+t" = "layout toggle tabbed stacking splith splitv";
+
+    # common/50_resize-mode.
+    "${mod}+r" = ''mode "Resize Mode"'';
+
+    # common/82_rofication-ilia: the notification viewer becomes "bring
+    # back the last dismissed notification" — mako keeps no browsable list.
+    "${mod}+n" = "exec makoctl restore";
+
+    # sway/20_ilia, with fuzzel and swayr in place of ilia. The look
+    # selector ($mod+Alt+l) has no equivalent outside Regolith.
+    "${mod}+space" = "exec fuzzel";
+    "${mod}+Shift+space" = "exec fuzzel --list-executables-in-path";
+    "${mod}+Ctrl+space" = "exec swayr switch-window";
+    "${mod}+Mod1+space" = "exec ${bin}/file-search";
+
+    # sway/30_keyboard_layout. Only does something for a keyboard with more
+    # than one layout; every device here has exactly one.
+    "${mod}+Mod1+BackSpace" = "input * xkb_switch_layout next";
+    "${mod}+Mod1+Shift+BackSpace" = "input * xkb_switch_layout prev";
+
+    # sway/35_gaps — moved off Regolith's minus/plus keysyms: on
+    # fr_azerty_num `minus` is Shift+6, so $mod+minus would shadow
+    # $mod+Shift+6 (move to workspace 6). The = key carries `=` and `+` on
+    # both layouts here, so shrink is $mod+= and grow $mod+Shift+=; Ctrl
+    # makes the step big.
+    "${mod}+equal" = "gaps inner current minus 6";
+    "${mod}+plus" = "gaps inner current plus 6";
+    "${mod}+Ctrl+equal" = "gaps inner current minus 12";
+    "${mod}+Ctrl+plus" = "gaps inner current plus 12";
+
+    # sway/40_childe, via a stand-in script with the same flags.
+    "${mod}+grave" = "exec ${bin}/next-free-workspace";
+    "${mod}+Shift+grave" = "exec ${bin}/next-free-workspace --move-window";
+    "${mod}+Mod1+grave" = "exec ${bin}/next-free-workspace --move-window --follow";
+
+    # sway/42_gtklock, with the system swaylock (see programs.swaylock).
+    "${mod}+Escape" = "exec /usr/bin/swaylock -f";
+
+    # sway/55_session_keybindings. gnome-session-quit and regolith-look are
+    # gone without the Regolith session: logout is `swaymsg exit`,
+    # reboot/poweroff go straight to systemd, and "refresh session" restarts
+    # the user services that replaced Regolith's.
+    "${mod}+Shift+q" = ''[con_id="__focused__"] kill'';
+    "${mod}+Mod1+q" =
+      "exec kill -9 $(swaymsg -t get_tree | jq '.. | select(.focused? == true) | .pid')";
+    "${mod}+Shift+c" = "reload";
+    "${mod}+Shift+r" =
+      "exec systemctl --user restart waybar.service kanshi.service swayrd.service";
+    "${mod}+Shift+e" =
+      "exec swaynag -t warning -m 'Do you really want to logout?' -b 'Logout' 'swaymsg exit'";
+    "${mod}+Shift+b" =
+      "exec swaynag -t warning -m 'Do you really want to reboot your system?' -b 'Reboot' 'systemctl reboot'";
+    "${mod}+Shift+p" =
+      "exec swaynag -t warning -m 'Do you really want to shutdown' -b 'Shutdown' 'systemctl poweroff'";
+    "--locked ${mod}+Shift+s" = "exec systemctl suspend";
+
+    # sway/60_config_keybindings. regolith-control-center goes with
+    # Regolith; GNOME's control center only runs if it thinks it is in GNOME,
+    # and the specific panels get standalone tools.
+    "${mod}+c" = "exec env XDG_CURRENT_DESKTOP=GNOME gnome-control-center";
+    "${mod}+d" = "exec wdisplays";
+    "${mod}+w" = "exec nm-connection-editor";
+    "${mod}+b" = "exec blueman-manager";
+    "${mod}+Shift+n" = "exec /usr/bin/nautilus --new-window";
+
+    # sway/65_media_keybindings — avizo (volumectl/lightctl and their
+    # on-screen display) is in nixpkgs, so these are unchanged. The two
+    # keycode bindings (play-pause, play) are in extraConfig.
+    "--locked XF86AudioRaiseVolume" = "exec volumectl -u + 5";
+    "--locked XF86AudioLowerVolume" = "exec volumectl -u - 5";
+    "--locked XF86AudioMute" = "exec volumectl %";
+    "--locked XF86AudioMicMute" = "exec volumectl -m %";
+    "XF86MonBrightnessUp" = "exec lightctl + 5";
+    "XF86MonBrightnessDown" = "exec lightctl - 5";
+    "--locked XF86AudioPause" = "exec playerctl pause";
+    "--locked XF86AudioNext" = "exec playerctl next";
+    "--locked XF86AudioPrev" = "exec playerctl previous";
+
+    # sway/70_bar_i3status-rs: `bar mode toggle` only drives swaybar;
+    # waybar toggles itself on SIGUSR1.
+    "${mod}+i" = "exec pkill -USR1 waybar";
+
+    # Screenshots. Regolith's sway/80_grimshot bound $mod+Print and
+    # $mod+Shift+Print too, but ~/.config/regolith3's 85-screenshot
+    # overrode both, so only its all-screens binding survives here.
+    "Print" = "exec ${bin}/screenshot screen";
+    "Shift+Print" = "exec ${bin}/screenshot region";
+    "${mod}+Print" = "exec ${bin}/screenshot window";
+    "Ctrl+Print" = "exec ${bin}/screenshot all";
+    "${mod}+Shift+Print" = "exec ${bin}/screenshot pick";
+    "${mod}+Shift+Ctrl+Print" = "exec grimshot --notify save screen";
+
+    # From ~/.config/regolith3's 90-display-rescan.
+    "${mod}+Shift+F5" = "exec ${bin}/rescan-displays";
+    "${mod}+Ctrl+F5" = "exec ${bin}/rescan-displays --deep";
+  };
+
+  # Stand-in for ilia's keybinding viewer ($mod+?): Regolith builds it from
+  # the `## Category // Action // Keys ##` comments, which Home Manager's
+  # generated config doesn't have — so list the bindings themselves.
+  cheatsheet =
+    let
+      pretty = s: builtins.replaceStrings
+        [ "Mod4" "Mod1" "--locked " ] [ "Super" "Alt" "" ] s;
+      lines = lib.mapAttrsToList
+        (key: cmd: "${pretty key}    ${lib.removePrefix "exec " cmd}")
+        keys;
+    in
+    pkgs.writeShellScript "sway-keybindings" ''
+      fuzzel --dmenu --width 90 --lines 30 --prompt 'keys: ' \
+        < ${pkgs.writeText "sway-keybindings.txt" (lib.concatLines lines)} >/dev/null
+    '';
 in
 {
   # Nix-built GUI programs need the host's GPU drivers — kitty in particular,
@@ -88,12 +275,18 @@ in
     wl-clipboard
     jq
     libnotify
-    # Media keys. brightnessctl goes through logind, so no udev rule or
-    # setuid is needed.
+    # Media keys: avizo is Regolith's own volume/brightness OSD, and its
+    # volumectl/lightctl call pamixer/brightnessctl from PATH. brightnessctl
+    # goes through logind, so no udev rule or setuid is needed.
+    avizo
+    pamixer
     brightnessctl
-    # What gnome-control-center's panels did under Regolith.
-    pavucontrol
+    playerctl
+    # What regolith-control-center's panels did ($mod+d/w/b), plus a mixer.
+    wdisplays
     networkmanagerapplet
+    blueman
+    pavucontrol
   ];
 
   # XKB layouts, previously deployed by ~/.config/sway/install.sh.
@@ -104,7 +297,7 @@ in
 
   # Helper scripts, previously deployed by ~/.config/sway/install.sh.
   home.file = lib.genAttrs'
-    [ "screenshot" "rescan-displays" "dock-diag" ]
+    [ "screenshot" "rescan-displays" "dock-diag" "next-free-workspace" "file-search" ]
     (name: lib.nameValuePair ".local/bin/${name}" {
       source = ./sway/bin + "/${name}";
       executable = true;
@@ -150,6 +343,18 @@ in
       window = {
         border = 0;
         titlebar = false;
+        # sway/40_default-style.
+        hideEdgeBorders = "smart";
+        commands = [
+          {
+            criteria.title = ".*";
+            command = "border pixel 0";
+          }
+          {
+            criteria.class = "floating_window";
+            command = "floating enable";
+          }
+        ];
       };
       floating = {
         border = 0;
@@ -187,43 +392,111 @@ in
         };
       };
 
-      # Added on top of Home Manager's defaults (sway's stock i3-style set,
-      # hjkl for focus/move). TODO: port Regolith's own bindings once
-      # /etc/regolith has been copied somewhere readable — this draft only
-      # carries over what lives in ~/.config/regolith3.
-      keybindings = lib.mkOptionDefault {
-        # Regolith habit: launcher on $mod+Space (displaces focus mode_toggle).
-        "${mod}+space" = "exec fuzzel";
-        "${mod}+Ctrl+Return" = "exec foot";
-        "${mod}+Escape" = "exec /usr/bin/swaylock -f";
-
-        # From 85-screenshot.
-        "Print" = "exec ${bin}/screenshot screen";
-        "Shift+Print" = "exec ${bin}/screenshot region";
-        "${mod}+Print" = "exec ${bin}/screenshot window";
-        "Ctrl+Print" = "exec ${bin}/screenshot all";
-        "${mod}+Shift+Print" = "exec ${bin}/screenshot pick";
-
-        # From 90-display-rescan.
-        "${mod}+Shift+F5" = "exec ${bin}/rescan-displays";
-        "${mod}+Ctrl+F5" = "exec ${bin}/rescan-displays --deep";
-
-        # wpctl is the system PipeWire's (Ubuntu ships wireplumber).
-        "XF86AudioRaiseVolume" = "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
-        "XF86AudioLowerVolume" = "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
-        "XF86AudioMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
-        "XF86AudioMicMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
-        "XF86MonBrightnessUp" = "exec brightnessctl set 5%+";
-        "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";
+      # The Regolith port (see `keys` above), plus its keybinding viewer.
+      keybindings = keys // {
+        "${mod}+question" = "exec ${cheatsheet}";
       };
 
+      # common/50_resize-mode. Note hjkl don't mirror the arrows vertically
+      # (k grows, j shrinks) — that is Regolith's own mapping, kept as is.
+      modes."Resize Mode" =
+        let
+          small = "6 px or 6 ppt";
+          large = "24 px or 24 ppt";
+        in
+        {
+          "Left" = "resize shrink width ${small}";
+          "Down" = "resize grow height ${small}";
+          "Up" = "resize shrink height ${small}";
+          "Right" = "resize grow width ${small}";
+          "Shift+Left" = "resize shrink width ${large}";
+          "Shift+Down" = "resize grow height ${large}";
+          "Shift+Up" = "resize shrink height ${large}";
+          "Shift+Right" = "resize grow width ${large}";
+          "h" = "resize shrink width ${small}";
+          "k" = "resize grow height ${small}";
+          "j" = "resize shrink height ${small}";
+          "l" = "resize grow width ${small}";
+          "Shift+h" = "resize shrink width ${large}";
+          "Shift+k" = "resize grow height ${large}";
+          "Shift+j" = "resize shrink height ${large}";
+          "Shift+l" = "resize grow width ${large}";
+          "Return" = ''mode "default"'';
+          "Escape" = ''mode "default"'';
+          "${mod}+r" = ''mode "default"'';
+        };
+
+      # sway/35_gaps.
+      gaps = {
+        inner = 5;
+        outer = 0;
+        smartGaps = true;
+      };
+
+      # sway/40_default-style (borders are with `window`, above).
+      focus.followMouse = false;
+      workspaceAutoBackAndForth = false;
+
       startup = [
-        # The system polkit agent (apt policykit-1-gnome): a Nix-built one
-        # can't reach the host's setuid polkit-agent-helper-1. Silently does
-        # nothing if that package isn't installed.
-        { command = "/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1"; }
+        # sway/85_polkit ran `mate-polkit`. A Nix-built agent can't reach the
+        # host's setuid polkit-agent-helper-1, so start whichever system
+        # agent is installed.
+        {
+          command = "sh -c 'for a in /usr/libexec/polkit-mate-authentication-agent-1 /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1; do [ -x \"$a\" ] && exec \"$a\"; done'";
+        }
+        # common/88_network-manager. --indicator: waybar's tray only speaks
+        # StatusNotifierItem.
         { command = "nm-applet --indicator"; }
+        # sway/65_media_keybindings: the OSD daemon and playerctl's
+        # "last active player" tracker.
+        { command = "avizo-service"; }
+        { command = "playerctld daemon"; }
+        # sway/25_xdg_desktop_portal.
+        { command = "systemctl --user start xdg-desktop-portal.service"; }
       ];
+    };
+
+    extraConfig = ''
+      # sway/65_media_keybindings: keycodes, as Regolith has them.
+      bindcode --locked 172 exec playerctl play-pause
+      bindcode --locked 208 exec playerctl play
+
+      # sway/40_default-style.
+      floating_maximum_size -1 x -1
+      popup_during_fullscreen smart
+
+      # sway/86_unclutter.
+      seat * hide_cursor 5000
+      seat * hide_cursor when-typing enable
+
+      # sway/96_clamshell ran regolith-sway-clamshell; this is its plain
+      # equivalent: panel off with the lid, back on when it opens. With no
+      # external screen, logind suspends on lid close anyway.
+      bindswitch --locked --reload lid:on output "${laptop}" disable
+      bindswitch --locked --reload lid:off output "${laptop}" enable
+    '';
+  };
+
+  # Backs $mod+period (last focused window) and $mod+Ctrl+space (window by
+  # name), which Regolith did with i3-swap-focus and ilia.
+  programs.swayr = {
+    enable = true;
+    systemd.enable = true;
+    settings = {
+      menu = {
+        executable = "fuzzel";
+        args = [ "--dmenu" "--prompt={prompt}: " ];
+      };
+      # Plain text: fuzzel doesn't render the pango markup in swayr's
+      # default formats.
+      format = {
+        html_escape = false;
+        urgency_start = "";
+        urgency_end = "";
+        window_format = "{indent}{app_name} — {title}";
+        workspace_format = "{indent}workspace {name}";
+        container_format = "{indent}container {layout}";
+      };
     };
   };
 

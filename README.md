@@ -115,6 +115,7 @@ sway is still sway and accepts any `-c`).
 
 ```sh
 sudo adduser hmtest                  # no sudo group
+sudo chsh -s /usr/bin/zsh hmtest     # so .zprofile loads Home Manager's session variables
 grep allowed-users /etc/nix/nix.conf # unset or containing hmtest
 ```
 
@@ -150,14 +151,38 @@ kitty won't start until that has been run once (by miguel — hmtest has no
 sudo); `$mod+Ctrl+Return` opens `foot`, which needs no GPU. The setup only adds
 a `/run/opengl-driver` symlink and a systemd unit that recreates it at boot.
 
+### Keybindings
+
+`sway.nix` ports every binding from Regolith 3.4's
+`/usr/share/regolith/{common,sway}/config.d/` (snapshot in
+`~/.config/regolith-snapshot/`) plus the overrides in `~/.config/regolith3`,
+replacing Home Manager's i3-style defaults outright. `$mod+?` lists them all.
+Same keys, different program behind them:
+
+| Keys | Regolith | Here |
+|---|---|---|
+| `$mod+Space` / `+Shift+Space` | ilia apps / commands | fuzzel / `fuzzel --list-executables-in-path` |
+| `$mod+Ctrl+Space`, `$mod+.` | ilia windows, i3-swap-focus | swayr (window by name, last focused window) |
+| `$mod+Alt+Space` | ilia file search (Tracker) | `file-search`: fd + fuzzel, names only |
+| `$mod+?` | ilia keybinding viewer | generated list in fuzzel |
+| `$mod+n` | rofication viewer | `makoctl restore` (last dismissed notification) |
+| `` $mod+` `` (+Shift / +Alt) | childe | `next-free-workspace`, same flags |
+| `$mod+c` / `d` / `w` / `b` | regolith-control-center panels | gnome-control-center / wdisplays / nm-connection-editor / blueman |
+| `$mod+Escape` | gtklock | system swaylock |
+| `$mod+Shift+e` / `b` / `p` | gnome-session-quit | `swaymsg exit` / `systemctl reboot` / `poweroff` |
+| `$mod+Shift+r` | regolith-look refresh | restart waybar, kanshi, swayrd |
+| `$mod+Alt+q` | `kill -9` via xdotool (X11 only) | `kill -9` of the focused window's pid via swaymsg |
+| `$mod+i` | toggle swaybar | toggle waybar |
+| media keys | avizo | avizo (unchanged) |
+
+Moved keys: gap size is `$mod+=` / `$mod+Shift+=` (Ctrl for the big step)
+instead of `$mod+-` / `$mod++`, because on `fr_azerty_num` `minus` is
+Shift+6 and `$mod+minus` would shadow `$mod+Shift+6` (move window to
+workspace 6). Gone: `$mod+Alt+l` (Regolith look selector).
+
 ### Parity checklist
 
-Regolith's base keybindings live in `/etc/regolith`, which this draft has not
-seen — the bindings are Home Manager's sway defaults plus everything that was
-in `~/.config/regolith3`. Port the rest from a copy:
-`cp -r /etc/regolith ~/.config/regolith-snapshot`.
-
-- [ ] keybindings match Regolith muscle memory
+- [ ] keybindings match Regolith muscle memory (see above)
 - [ ] kanshi profiles apply on each dock/monitor (`sway.nix` has all eight)
 - [ ] `rescan-displays` / `dock-diag` / screenshot bindings
 - [ ] both XKB layouts, per device

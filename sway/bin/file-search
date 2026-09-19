@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Stand-in for Regolith's `ilia -p tracker` file search: fuzzy-pick a file
+# under $HOME with fuzzel and open it with its default application.
+#
+# fd instead of GNOME Tracker, so there is no index to keep running — the
+# tradeoff is that it searches file names only, not contents. fd's defaults
+# (skip hidden files and anything .gitignore'd) keep the list to what you
+# would actually open.
+set -uo pipefail
+
+file=$(cd "$HOME" && fd --type f | fuzzel --dmenu --prompt 'file: ') || exit 0
+[ -n "$file" ] && exec xdg-open "$HOME/$file"

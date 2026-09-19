@@ -101,7 +101,13 @@ Two things `checkhealth` alone won't catch:
   result/home-files/.config/sway/config`. `swayidle`'s service PATH holds only
   bash, so commands it runs need absolute `/usr/bin/...` paths.
   `targets.genericLinux.enable` is set there so Nix-built kitty can use the
-  GPU after a one-time `sudo non-nixos-gpu-setup`.
+  GPU after a one-time `sudo non-nixos-gpu-setup`. Its keybindings are a
+  port of Regolith 3.4's partials (snapshot in `~/.config/regolith-snapshot`)
+  and **replace** Home Manager's defaults (no `mkOptionDefault`) — each group
+  is commented with the partial it came from. Beware translated-keysym
+  collisions on `fr_azerty_num`, whose Shift+digit gives `& é " ' ( - è _ ç
+  à`: sway matches translated keysyms first, so a `$mod+minus` binding
+  would steal `$mod+Shift+6`.
 - `nvim/` — the LazyVim starter template, git-tracked here. Wired into
   `~/.config/nvim` via `home.file` with `recursive = true`, which symlinks
   each file individually rather than symlinking the whole directory in one

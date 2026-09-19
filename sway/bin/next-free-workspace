@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Stand-in for Regolith's `childe`, which is not packaged anywhere outside
+# Regolith: jump to, or send the focused window to, the lowest-numbered
+# workspace that does not exist yet. Sway drops empty unfocused workspaces,
+# so "does not exist" is the same as "free".
+#
+#   next-free-workspace                          go there
+#   next-free-workspace --move-window            send the window, stay put
+#   next-free-workspace --move-window --follow   send the window and follow it
+#
+# Same flags as childe, so the bindings in sway.nix read like Regolith's
+# 40_childe. Needs swaymsg (from the system sway) and jq.
+set -euo pipefail
+
+used=$(swaymsg -t get_workspaces | jq '.[].num')
+n=1
+while grep -qx "$n" <<<"$used"; do
+    n=$((n + 1))
+done
+
+case "${1:-} ${2:-}" in
+    " ")                      swaymsg "workspace number $n" ;;
+    "--move-window ")         swaymsg "move container to workspace number $n" ;;
+    "--move-window --follow") swaymsg "move container to workspace number $n; workspace number $n" ;;
+    *)
+        echo "usage: $(basename "$0") [--move-window [--follow]]" >&2
+        exit 2
+        ;;
+esac >/dev/null
