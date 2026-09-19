@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# One-shot diagnostic for the dock that stopped charging and stopped driving
+# the external screen.
+#
+# The failure is upstream of DRM: if the laptop is not charging from the dock,
+# USB-C power delivery never negotiated, and a link that never came up cannot
+# carry DisplayPort either. So this looks at PD and enumeration first and
+# treats the display as a downstream symptom.
+#
+#   dock-diag           collect everything, print a report
+#   dock-diag --watch   live udev/kernel events — run it, then plug the dock
+#
+# Run as root (or it will prompt) so dmesg and the thunderbolt tree are
+# readable. Not runnable from the Claude Code sandbox: no /sys/class/drm,
+# no /sys/class/typec, no sway IPC.
+set -uo pipefail
+
+have() { command -v "$1" >/dev/null 2>&1; }
+hdr() { printf '\n=== %s\n' "$*"; }
+
+if [ "${1:-}" = "--watch" ]; then
+    echo "Watching for dock events. Plug the dock in now. Ctrl-C to stop."
+    echo "Nothing at all appearing = the laptop never saw it electrically:"
+    echo "cable, dock PSU, or port — not a driver problem."
+    echo
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "(re-running under sudo for dmesg --follow)" >&2
+        exec sudo "$0" --watch
+    fi
+    dmesg -T --follow &
+    dmesg_pid=$!
+    trap 'kill $dmesg_pid 2>/dev/null' EXIT
+    udevadm monitor --udev --subsystem-match=usb \
+                           --subsystem-match=typec \
+                           --subsystem-match=thunderbolt \
+                           --subsystem-match=drm \
+                           --subsystem-match=power_supply
+    exit 0
+fi
+
+hdr "system"
+date
+uname -r
+have hostnamectl && hostnamectl | grep -iE 'hardware|firmware'
+
+# 1. Power delivery. If the laptop is not charging, nothing downstream matters.
+hdr "power supplies (is anything feeding us?)"
+for ps in /sys/class/power_supply/*; do
+    [ -e "$ps" ] || continue
+    printf '%s: type=%s online=%s status=%s\n' \
+        "$(basename "$ps")" \
+        "$(cat "$ps/type" 2>/dev/null)" \
+        "$(cat "$ps/online" 2>/dev/null || echo -)" \
+        "$(cat "$ps/status" 2>/dev/null || echo -)"
+done
+echo
+echo "A dock that charges shows an extra Mains/USB supply with online=1."
+echo "Only the built-in adapter listed = PD never negotiated."
+
+# 2. USB-C port state. port*-partner only exists when something is attached
+#    and the CC lines worked. Its absence is the single most telling result.
+hdr "usb-c / type-c ports"
+if [ -d /sys/class/typec ] && [ -n "$(ls -A /sys/class/typec 2>/dev/null)" ]; then
+    for p in /sys/class/typec/*; do
+        n=$(basename "$p")
+        case "$n" in
+            *-partner)
+                printf '%s: ATTACHED  id=%s\n' "$n" \
+                    "$(cat "$p/identity/id_header" 2>/dev/null || echo '?')"
+                ;;
+            port*)
+                printf '%s: data=%s power=%s\n' "$n" \
+                    "$(cat "$p/data_role" 2>/dev/null)" \
+                    "$(cat "$p/power_role" 2>/dev/null)"
+                ;;
+        esac
+    done
+else
+    echo "no /sys/class/typec — the UCSI/type-c driver never bound."
+    echo "Check for ucsi_acpi / typec_ucsi below."
+fi
+
+hdr "type-c and thunderbolt drivers loaded?"
+lsmod | grep -E '^(thunderbolt|typec|typec_ucsi|ucsi_acpi|xhci_pci|xhci_hcd)\b' \
+    || echo "(none as modules — may be built into the kernel, not conclusive)"
+grep -hE 'THUNDERBOLT|TYPEC_UCSI' "/boot/config-$(uname -r)" 2>/dev/null \
+    | grep -v '^#' || true
+
+# 3. Enumeration. A dock that got power but not data shows up here and
+#    nowhere else.
+hdr "thunderbolt / usb4 devices"
+if have boltctl; then
+    boltctl list
+else
+    echo "(boltctl not installed: apt install bolt)"
+fi
+ls -l /sys/bus/thunderbolt/devices/ 2>/dev/null || echo "no thunderbolt bus"
+
+hdr "usb tree (is the dock enumerated at all?)"
+have lsusb && lsusb -t
+
+hdr "usb / tb / pd controllers on the bus"
+have lspci && lspci -nn | grep -iE 'thunderbolt|usb|dma' || true
+
+# 3b. DisplayLink. Many i-tec docks drive their screens over USB with a
+#     DisplayLink chip instead of DP alt-mode. Those need the out-of-tree evdi
+#     module plus the DisplayLink Manager daemon, and they do NOT appear as
+#     i915 connectors at all — so a DRM-only diagnosis would miss them.
+hdr "displaylink (evdi) — applies only to DisplayLink-based docks"
+lsmod | grep -E '^evdi\b' || echo "evdi module NOT loaded"
+ls -d /sys/devices/evdi* 2>/dev/null || true
+have systemctl && systemctl is-active displaylink-driver.service 2>/dev/null \
+    || echo "displaylink-driver.service not active (or not installed)"
+have lsusb && lsusb | grep -i 'displaylink\|17e9:' \
+    || echo "no DisplayLink USB device visible"
+echo
+echo "If this dock is a DisplayLink model, the screen depends on evdi +"
+echo "DisplayLink Manager, not on the i915 connectors below. Note that"
+echo "DisplayLink under Wayland/sway is fragile at the best of times."
+
+# 4. Display, last — a symptom, not the cause.
+hdr "kernel connector status"
+grep -H . /sys/class/drm/card*-*/status 2>/dev/null
+echo
+echo "eDP = internal panel. Any DP/HDMI line reading 'connected' while the"
+echo "screen is dark means a stale cached state; 'disconnected' everywhere"
+echo "means the dock genuinely is not there."
+
+hdr "connector polling"
+poll=$(cat /sys/module/drm_kms_helper/parameters/poll 2>/dev/null)
+echo "drm_kms_helper.poll = ${poll:-unknown}"
+[ "$poll" = "N" ] && echo "N = no periodic re-probe, HPD interrupts only."
+
+# 5. The log, unfiltered by the display-only grep that hid USB last time.
+hdr "kernel messages: power delivery and enumeration"
+dmesg -T 2>/dev/null \
+    | grep -iE 'thunderbolt|usb4|typec|type-c|ucsi|pd_|power delivery|tps6598|xhci|over-?current|not enough power|rejected' \
+    | tail -50 \
+    || echo "(needs root: sudo $0)"
+
+hdr "kernel messages: display"
+dmesg -T 2>/dev/null \
+    | grep -iE 'edid|link training|hpd|hotplug|connector' \
+    | tail -30
+
+hdr "next step"
+cat <<'EOF'
+If "power supplies" shows no dock supply AND there is no port*-partner AND
+lsusb -t is unchanged with the dock plugged in, the laptop is seeing nothing
+at all. That is physical, in this order of likelihood:
+
+  1. the USB-C cable — damaged CC/SBU lines kill PD and DP alt-mode while
+     USB 2.0 data often still works, which matches a screen that failed
+     intermittently before dying completely
+  2. the dock's own power brick
+  3. the laptop port — on this barebone not every USB-C port carries PD and
+     DP alt-mode; confirm you are using the one that used to work
+
+Split laptop from dock in one test: does the laptop charge from its own
+charger? Yes means the laptop's PD sink is fine and the fault is the
+cable/dock. Then run `dock-diag --watch` and plug the dock in.
+EOF

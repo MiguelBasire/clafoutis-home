@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Force a display rescan when the dock's external screen goes black but sway
+# still believes it is connected.
+#
+# Escalating, because the cheap fix works most of the time and the expensive
+# one needs root:
+#
+#   1. output disable/enable   sway-level teardown, forces a fresh modeset
+#   2. udevadm trigger (drm)   re-emit hotplug uevents so wlroots re-enumerates
+#   3. echo detect > status    make the *kernel* redo link training / EDID read
+#
+# Steps 2 and 3 need root. They are skipped silently unless passwordless sudo
+# is available, so the keybinding still does something useful without a
+# password prompt you cannot answer from a black screen.
+#
+#   rescan-displays           steps 1 and 2
+#   rescan-displays --deep    steps 1, 2 and 3
+#   rescan-displays --diag    no changes, print state for diagnosis
+#
+# Must run from the sway session (needs SWAYSOCK). Not runnable from the
+# Claude Code sandbox — there is no sway IPC socket there.
+set -uo pipefail
+
+deep=0
+diag=0
+case "${1:-}" in
+    --deep) deep=1 ;;
+    --diag) diag=1 ;;
+    "") ;;
+    *) echo "usage: $(basename "$0") [--deep|--diag]" >&2; exit 2 ;;
+esac
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+say() {
+    echo "$*"
+    have notify-send && notify-send -a displays -t 3000 "Displays" "$*"
+}
+
+# sway prints JSON when piped. jq if we have it, GNU grep otherwise.
+outputs() {
+    if have jq; then
+        swaymsg -t get_outputs | jq -r '.[].name'
+    else
+        swaymsg -t get_outputs | grep -oP '"name": "\K[^"]+'
+    fi
+}
+
+# Everything except the built-in panel — eDP-* is the laptop screen. Cycling
+# that one would black out the machine for no reason.
+external() { outputs | grep -v '^eDP'; }
+
+sysfs_status() { grep -H . /sys/class/drm/card*-*/status 2>/dev/null; }
+
+if [ -z "${SWAYSOCK:-}" ] && ! swaymsg -t get_version >/dev/null 2>&1; then
+    echo "no sway IPC — run this from inside the sway session" >&2
+    exit 1
+fi
+
+if [ "$diag" = 1 ]; then
+    echo "=== sway outputs"
+    swaymsg -t get_outputs -p
+    echo
+    echo "=== kernel connector status"
+    sysfs_status
+    echo
+    echo "=== connector polling (N means no periodic reprobe, HPD only)"
+    cat /sys/module/drm_kms_helper/parameters/poll 2>/dev/null
+    echo
+    echo "=== recent drm/dock kernel messages"
+    dmesg -T 2>/dev/null | grep -iE 'drm|link training|edid|hpd|amdgpu|i915|xe|nouveau' | tail -60 \
+        || echo "(dmesg needs root here: sudo dmesg -T | grep -iE 'drm|edid|hpd')"
+    echo
+    echo "=== dock still enumerated?"
+    have lsusb && lsusb -t
+    have boltctl && boltctl list
+    exit 0
+fi
+
+mapfile -t ext < <(external)
+
+if [ "${#ext[@]}" -eq 0 ]; then
+    say "no external output listed by sway"
+else
+    # 1. Teardown and re-create each external output.
+    for o in "${ext[@]}"; do
+        swaymsg output "$o" disable >/dev/null
+    done
+    sleep 2
+    for o in "${ext[@]}"; do
+        swaymsg output "$o" enable >/dev/null
+    done
+    say "cycled: ${ext[*]}"
+fi
+
+# 2. Re-emit DRM uevents. Fixes the case where sway missed the hotplug.
+if sudo -n true 2>/dev/null; then
+    sudo -n udevadm trigger --subsystem-match=drm --action=change
+    say "re-triggered drm uevents"
+else
+    echo "skipped udev trigger — no passwordless sudo" >&2
+fi
+
+# 3. Force the driver to re-probe the physical link instead of trusting its
+#    cached state. This is what helps when sysfs still says "connected" but
+#    the panel is dark.
+if [ "$deep" = 1 ]; then
+    if sudo -n true 2>/dev/null; then
+        for s in /sys/class/drm/card*-*/status; do
+            case "$s" in *eDP*) continue ;; esac
+            sudo -n sh -c "echo detect > '$s'"
+        done
+        say "forced kernel re-detect"
+        sysfs_status
+    else
+        echo "skipped force-detect — needs root: sudo $0 --deep" >&2
+    fi
+fi

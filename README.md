@@ -9,6 +9,7 @@ Nix" on a Mac, and now covers two machines.
 |---|---|---|
 | `miguel@mac` (alias: `miguel`) | `aarch64-darwin` | the MacBook |
 | `miguel@clafoutis02` | `x86_64-linux` | TUXEDO laptop, Regolith/sway on Wayland |
+| `hmtest@clafoutis02` | `x86_64-linux` | same laptop, throwaway test user for a Regolith-free sway desktop |
 
 ## Layout
 
@@ -24,6 +25,8 @@ nvim/         -- the LazyVim starter template, shared by both machines,
                  symlinked file-by-file into ~/.config/nvim
 nvim-darwin/  -- Neovim plugin specs layered on top of nvim/ on macOS only
 nvim-linux/   -- Neovim plugin specs layered on top of nvim/ on Linux only
+sway.nix      -- plain sway desktop (no Regolith); hmtest@clafoutis02 only
+sway/         -- XKB layouts and ~/.local/bin helpers deployed by sway.nix
 ```
 
 ## Applying changes
@@ -76,6 +79,100 @@ Do not add a `programs.sway` block. Regolith starts sway with
 so Home Manager would generate a file nothing loads. (An abandoned Home
 Manager generation on that machine did exactly this — it is still in the
 store, unactivated.)
+
+The one exception is `sway.nix`, which is imported **only** by
+`hmtest@clafoutis02` — see [Testing a Regolith-free desktop](#testing-a-regolith-free-desktop).
+Until that is promoted, `~/.config/sway/install.sh` stays the source of truth
+for miguel; `sway/xkb/` and `sway/bin/` here are copies of it and must be kept
+in step by hand.
+
+## Testing a Regolith-free desktop
+
+Goal: replace Regolith with plain sway configured entirely by Home Manager,
+without risking the working session. `hmtest` is a throwaway user **without
+sudo** on the same laptop; it gets its own home and nix profile, so nothing it
+does touches miguel's `~/.config`, GDM, or the Regolith session.
+
+`sway.nix` writes config only for the two binaries that must come from the
+system — `sway` (needs the host GPU stack) and `swaylock` (needs the host PAM)
+— and installs everything else (waybar, fuzzel, mako, kanshi, swayidle,
+grimshot, foot, ...) from nixpkgs.
+
+**Before installing anything with apt**, check whether Regolith's own sway
+package conflicts with Ubuntu's — it may, and removing it breaks the working
+session:
+
+```sh
+dpkg -S "$(command -v sway)"    # which package owns the sway binary
+command -v swaylock             # present? if not: apt install -s swaylock (simulate first)
+apt install -s swaylock         # -s = simulate: look for "REMOVE" lines
+```
+
+Nothing in the test needs apt as long as `/usr/bin/sway` exists (Regolith's
+sway is still sway and accepts any `-c`).
+
+### Once
+
+```sh
+sudo adduser hmtest                  # no sudo group
+grep allowed-users /etc/nix/nix.conf # unset or containing hmtest
+```
+
+### Each iteration
+
+As miguel, build (hmtest can't read this repo — the result is a
+world-readable store path instead):
+
+```sh
+nix build .#homeConfigurations."hmtest@clafoutis02".activationPackage -L
+readlink -f result
+```
+
+Optional quick check, still as miguel — the config parses under sway:
+
+```sh
+sway --validate -c result/home-files/.config/sway/config
+```
+
+Then on a text console (`Ctrl+Alt+F3`), log in as `hmtest` and:
+
+```sh
+/nix/store/…-home-manager-generation/activate   # the path from readlink
+XDG_CURRENT_DESKTOP=sway XDG_SESSION_DESKTOP=sway sway
+```
+
+Starting from a TTY needs no session file, so GDM is untouched. `$mod+Shift+e`
+exits back to the console; `Ctrl+Alt+F1`/`F2` returns to miguel's session.
+
+The first activation prints a warning that the system is not set up to use
+the GPU with Nix packages, with a `sudo …/non-nixos-gpu-setup` command. Nix's
+kitty won't start until that has been run once (by miguel — hmtest has no
+sudo); `$mod+Ctrl+Return` opens `foot`, which needs no GPU. The setup only adds
+a `/run/opengl-driver` symlink and a systemd unit that recreates it at boot.
+
+### Parity checklist
+
+Regolith's base keybindings live in `/etc/regolith`, which this draft has not
+seen — the bindings are Home Manager's sway defaults plus everything that was
+in `~/.config/regolith3`. Port the rest from a copy:
+`cp -r /etc/regolith ~/.config/regolith-snapshot`.
+
+- [ ] keybindings match Regolith muscle memory
+- [ ] kanshi profiles apply on each dock/monitor (`sway.nix` has all eight)
+- [ ] `rescan-displays` / `dock-diag` / screenshot bindings
+- [ ] both XKB layouts, per device
+- [ ] lock (`$mod+Escape`), idle lock at 5 min, screens off at 10 min
+- [ ] notifications (mako), tray (nm-applet), volume/brightness keys
+- [ ] polkit prompts (needs apt `policykit-1-gnome`)
+- [ ] screen sharing in the browser/Zoom (needs apt `xdg-desktop-portal-wlr`)
+- [ ] kitty after the GPU setup
+
+### Cleaning up
+
+```sh
+sudo userdel -r hmtest
+sudo nix-collect-garbage
+```
 
 ### `acli` and the unfree predicate
 

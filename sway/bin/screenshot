@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Screenshot helper for the Regolith sway session.
+#
+# A thin wrapper around grimshot (the script sway ships in contrib/, itself a
+# wrapper over grim + slurp + wl-copy + jq). grimshot already handles target
+# selection and notifications; this adds only the two things it does not:
+# a fixed destination directory, and copy-to-clipboard on every grimshot
+# version — `grimshot copysave` is recent, `save` + `wl-copy` is not.
+#
+#   screenshot screen    the focused output          -> grimshot output
+#   screenshot all       every output, stitched      -> grimshot screen
+#   screenshot region    drag a rectangle            -> grimshot area
+#   screenshot window    the focused window          -> grimshot active
+#   screenshot pick      click a window to choose it -> grimshot window
+#
+# Note the deliberate rename: grimshot's "screen" means *all* outputs, which
+# reads backwards on a laptop + dock. Here "screen" is the one you are looking
+# at and "all" is everything.
+#
+# Bound by regolith3/sway/config.d/85-screenshot. Not runnable from the
+# Claude Code sandbox — no wayland display or sway IPC socket there.
+set -uo pipefail
+
+# Where the PNGs land. Resolved through `xdg-user-dir`, not $XDG_PICTURES_DIR:
+# ~/.config/user-dirs.dirs is a config file that the xdg-user-dir *command*
+# reads, not something sourced into the session environment, so the variable is
+# normally unset at keypress time. Trusting it here would silently create an
+# English ~/Pictures next to the real, locale-named directory (~/Images on this
+# French install). xdg-user-dir echoes $HOME when it cannot resolve a name, so
+# that case is caught explicitly rather than dumping files into ~/Screenshots.
+dir="${XDG_SCREENSHOTS_DIR:-}"
+if [ -z "$dir" ]; then
+    pics=$(xdg-user-dir PICTURES 2>/dev/null)
+    [ -n "$pics" ] && [ "$pics" != "$HOME" ] || pics="${XDG_PICTURES_DIR:-$HOME/Pictures}"
+    dir="$pics/Screenshots"
+fi
+file="$dir/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png"
+
+note() {
+    command -v notify-send >/dev/null 2>&1 && notify-send -a screenshot "$@"
+}
+
+die() {
+    note -u critical "Screenshot failed" "$1"
+    echo "$1" >&2
+    exit 1
+}
+
+command -v grimshot >/dev/null 2>&1 ||
+    die "grimshot is not installed — run 'grimshot check' for its own deps"
+
+case "${1:-region}" in
+    screen) target=output ;;
+    all)    target=screen ;;
+    region) target=area ;;
+    window) target=active ;;
+    pick)   target=window ;;
+    *)
+        echo "usage: $(basename "$0") [screen|all|region|window|pick]" >&2
+        exit 2
+        ;;
+esac
+
+mkdir -p "$dir" || die "cannot create $dir"
+
+# grimshot exits non-zero when a selection is cancelled with Esc. That is a
+# normal outcome, not a failure, and it leaves no file behind — so treat a
+# missing file as a silent cancel rather than an error.
+grimshot save "$target" "$file" 2>/dev/null
+[ -s "$file" ] || { rm -f "$file"; exit 0; }
+
+if command -v wl-copy >/dev/null 2>&1; then
+    wl-copy --type image/png <"$file" ||
+        note "Screenshot saved" "clipboard copy failed — $file"
+fi
+
+note "Screenshot saved" "$(basename "$file") — copied to clipboard"

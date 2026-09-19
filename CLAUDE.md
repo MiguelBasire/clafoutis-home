@@ -14,6 +14,9 @@ changes.
 
 Two outputs: `homeConfigurations."miguel@mac"` (`aarch64-darwin`, aliased as
 `"miguel"`) and `homeConfigurations."miguel@clafoutis02"` (`x86_64-linux`).
+A third, `homeConfigurations."hmtest@clafoutis02"`, is a throwaway no-sudo
+test user on the Linux laptop for bringing up a Regolith-free sway desktop
+(`sway.nix`); see `README.md`'s "Testing a Regolith-free desktop".
 
 ## Commands
 
@@ -89,6 +92,16 @@ Two things `checkhealth` alone won't catch:
   per-host Neovim overlays, and each platform's keyboard/font handling.
   **`mac-app-util` is imported only by the macOS module list**, since it
   builds its trampolines with `osacompile`.
+- `sway.nix` — plain sway desktop (sway config, waybar, fuzzel, mako,
+  kanshi, swayidle/swaylock, XKB layouts and `~/.local/bin` helpers from
+  `sway/`). **Imported only by `hmtest@clafoutis02`.** `sway` and `swaylock`
+  are `package = null` — the binaries come from the system (host GPU stack,
+  host PAM); Home Manager writes their config only. Hence `checkConfig =
+  false`: validate by hand with `sway --validate -c
+  result/home-files/.config/sway/config`. `swayidle`'s service PATH holds only
+  bash, so commands it runs need absolute `/usr/bin/...` paths.
+  `targets.genericLinux.enable` is set there so Nix-built kitty can use the
+  GPU after a one-time `sudo non-nixos-gpu-setup`.
 - `nvim/` — the LazyVim starter template, git-tracked here. Wired into
   `~/.config/nvim` via `home.file` with `recursive = true`, which symlinks
   each file individually rather than symlinking the whole directory in one
@@ -164,8 +177,11 @@ Two things `checkhealth` alone won't catch:
   here.** `linux.nix` owns the CLI/editor/terminal layer; XKB symbol files,
   Regolith `sway/config.d` partials and the `~/.local/bin` helper scripts are
   deployed imperatively by `~/.config/sway/install.sh` on that machine. Never
-  add a `programs.sway` block: Regolith runs `sway -c
-  /etc/regolith/sway/config` and never reads `~/.config/sway/config`.
+  add a `programs.sway` / `wayland.windowManager.sway` block to `linux.nix`
+  or `common.nix`: Regolith runs `sway -c /etc/regolith/sway/config` and never
+  reads `~/.config/sway/config`. The exception is `sway.nix`, imported only by
+  `hmtest@clafoutis02`; its `sway/xkb/` and `sway/bin/` are copies of
+  `~/.config/sway/` and must be kept in step by hand until it is promoted.
 - **On Linux, a font in `home.packages` is invisible without
   `fonts.fontconfig.enable = true`** (set in `linux.nix`). macOS links fonts
   into `~/Library/Fonts` on its own; Linux does not, and the symptom is

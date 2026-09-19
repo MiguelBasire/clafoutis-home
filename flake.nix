@@ -66,6 +66,23 @@
             ./linux.nix
           ];
         };
+
+        # Throwaway no-sudo user on the same laptop, for bringing up a plain
+        # sway desktop (sway.nix) without Regolith before miguel switches.
+        # Same modules as miguel@clafoutis02 plus sway.nix; only the identity
+        # differs. See "Testing a Regolith-free desktop" in README.md.
+        "hmtest@clafoutis02" = mkHome {
+          system = "x86_64-linux";
+          modules = [
+            ./common.nix
+            ./linux.nix
+            ./sway.nix
+            ({ lib, ... }: {
+              home.username = lib.mkForce "hmtest";
+              home.homeDirectory = lib.mkForce "/home/hmtest";
+            })
+          ];
+        };
       };
     };
 }
