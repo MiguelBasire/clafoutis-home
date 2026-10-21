@@ -1,0 +1,12 @@
+#!/bin/zsh -l
+# Runs a command inside the Mercio nix dev shell, then leaves an interactive shell there, so
+# stopping a service with Ctrl+C (or quitting nvim/claude) drops to a prompt instead of closing
+# the window. With no command, it just opens the shell.
+# Login shell (-l) because kitty started from the Dock carries launchd's bare PATH, without nix.
+cd /Users/miguel/Projects/mercio/mercio || exit 1
+
+if [ $# -eq 0 ]; then
+  exec nix develop --command zsh -i
+fi
+# The INT trap keeps this wrapper alive when Ctrl+C stops the command; exec resets it.
+exec nix develop --command zsh -ic "trap : INT; $*; exec zsh -i"
