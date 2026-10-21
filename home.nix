@@ -60,6 +60,16 @@ in
     # resolve/run newer gem versions there instead of capping out on
     # whatever the ancient system Ruby can still support.
     ruby
+    # Tooling for LazyVim's lang.nix / lang.ruby extras (nvim/lua/plugins/extras.lua).
+    # These come from Nix, not Mason (see `mason = false` there): Mason
+    # can't install nil at all here, and builds ruby-lsp/rubocop's native
+    # gems against whatever /nix/store Ruby is on PATH at install time, so
+    # they stop loading ("linked to incompatible libruby") after every Ruby bump.
+    nil
+    nixfmt
+    statix
+    ruby-lsp
+    rubocop
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).
