@@ -53,6 +53,13 @@ in
     nerd-fonts.fira-code
     gh
     bbt
+    # macOS's system Ruby (/usr/bin/ruby) is 2.6.10, EOL since March 2022 --
+    # too old for current fastlane (>=2.235 needs Ruby >=3.0; even
+    # >=2.232 needs >=2.7), which the qalyo-ios repo's Gemfile.lock pins
+    # to. A modern Ruby earlier on PATH than /usr/bin lets `bundle`
+    # resolve/run newer gem versions there instead of capping out on
+    # whatever the ancient system Ruby can still support.
+    ruby
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).
