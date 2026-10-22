@@ -150,7 +150,7 @@ that used to be a manual line lives in `home.nix` now:
 
 | What | Where in `home.nix` |
 |---|---|
-| Nix multi-user installer's shell bootstrap (`nix.sh`, `nix-daemon.sh`, `NIX_PATH` fallback) | `programs.zsh.initContent` at `lib.mkOrder 500`, preserved verbatim from the original hand-written block |
+| Nix multi-user installer's shell bootstrap (`nix-daemon.sh`) | `programs.zsh.envExtra` (→ `~/.zshenv`), sourcing `/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh`. Originally copied verbatim into `initContent`, but that block pointed at `~/.nix-profile`, which is Home Manager's profile and has no `nix-daemon.sh` — a silent no-op that only went unnoticed because `/etc/zshrc` did the real work. The macOS 27.0.1 update reset `/etc/zshrc` to Apple's stock copy and Nix vanished from every new shell; `~/.zshenv` is user-owned, so OS updates can't undo it. |
 | `PATH="$HOME/.local/bin:$PATH"` | `home.sessionPath` |
 | `NIX_CONFIG="extra-experimental-features = nix-command flakes"` | `home.sessionVariables` (moved here from a zsh-only export — now applies to *any* HM-managed shell, and is load-bearing: without it `nix build`/`nix flake` refuse to run, since `/etc/nix/nix.conf` doesn't enable those features globally on this machine) |
 | `autoload -Uz compinit; compinit` | `programs.zsh.enableCompletion = true;` |

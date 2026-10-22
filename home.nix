@@ -275,22 +275,21 @@ in
         file = "share/fzf-tab/fzf-tab.plugin.zsh";
       }
     ];
-    # Preserves the Nix multi-user installer's shell bootstrap (profile
-    # sourcing, daemon env) exactly as it was in the hand-written
-    # ~/.zshrc before this migration — Home Manager emits it now instead
-    # of it being manually maintained. mkOrder 500 keeps it early,
-    # mirroring its original position at the top of the file.
-    initContent = lib.mkOrder 500 ''
-      if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-        . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-      fi
-
-      if [ -e "$HOME/.nix-profile/etc/profile.d/nix-daemon.sh" ]; then
-        . "$HOME/.nix-profile/etc/profile.d/nix-daemon.sh"
-      fi
-
-      if [ -e "$HOME/.nix-defexpr/profile" ] && [ -z "''${NIX_PATH+x}" ]; then
-        export NIX_PATH="$HOME/.nix-defexpr/channels"
+    # Nix's own shell bootstrap (PATH, NIX_PROFILES, SSL certs), sourced
+    # from ~/.zshenv so it doesn't depend on /etc/zshrc: macOS updates
+    # replace /etc/zshrc with Apple's stock copy, silently dropping the block
+    # the Nix installer added there (happened with the 27.0.1 update, and
+    # nix vanished from every new zsh). ~/.zshenv is user-owned, so updates
+    # leave it alone, and it also covers non-interactive shells.
+    #
+    # The path is the *system* default profile, not ~/.nix-profile: that one
+    # is Home Manager's profile and has no nix-daemon.sh, so the old
+    # ~/.nix-profile-based block that used to live here was a silent no-op
+    # all along. nix-daemon.sh guards against double-sourcing, so /etc/zshrc
+    # and /etc/bashrc still sourcing it too is harmless.
+    envExtra = ''
+      if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
       fi
     '';
   };
