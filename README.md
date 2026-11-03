@@ -139,6 +139,117 @@ pins exact package versions.
   `enableZshIntegration = true`, now that `zsh` is Home Manager's. No more
   hand-appended `eval "$(... init zsh)"` lines.
 
+## Tweaking the Neovim config
+
+Everything under `~/.config/nvim` is a read-only symlink into `/nix/store` —
+never edit there. The source of truth is `nvim/` in this repo:
+
+```sh
+cd ~/.config/home-manager
+$EDITOR nvim/lua/plugins/whatever.lua
+git add nvim/        # new files are invisible to the flake until staged
+nix build .#homeConfigurations.miguel.activationPackage -L && ./result/activate
+nvim                 # lazy.nvim installs/removes plugins on startup
+git commit
+```
+
+Where each kind of change goes:
+
+- **LazyVim extra** (anything listed in `:LazyExtras`) → an
+  `{ import = "lazyvim.plugins.extras.…" }` line in
+  `nvim/lua/plugins/extras.lua`. Use `:LazyExtras` only to *browse*:
+  pressing `x` there writes to `~/.config/nvim/lazyvim.json`, a runtime file
+  outside this repo, so the choice silently never makes it into git.
+- **New plugin or plugin tweak** → a new file in `nvim/lua/plugins/`
+  returning a lazy.nvim spec.
+- **Options / keymaps / autocmds** → `nvim/lua/config/{options,keymaps,autocmds}.lua`.
+- **LSP / formatter / linter binaries** → Mason, by default. When Mason
+  can't install one or it breaks — `nil` (no Mason build here), and
+  `ruby-lsp`/`rubocop` (Mason builds their native gems against whatever
+  `/nix/store` Ruby is on `PATH`, so they fail with "linked to incompatible
+  libruby" after every Ruby bump) — install it via `home.packages` in
+  `home.nix` instead, and set `<server> = { mason = false }` in
+  `extras.lua`'s `nvim-lspconfig` opts. Without `mason = false`, LazyVim
+  still routes the server through Mason and the Nix binary is ignored.
+  Uninstall any broken Mason copy too: Mason's bin dir is prepended to
+  Neovim's `PATH`, so it shadows the Nix one.
+  See "Mason or Nix?" below for how to decide.
+- **Plugin updates** → `:Lazy update`, then copy the updated
+  `~/.config/nvim/lazy-lock.json` into `nvim/` if you want versions pinned
+  in git.
+
+Verify: `nvim --headless +qa` must print nothing on stderr, then open a real
+file of the language and check `:LspInfo` (or the `vim.lsp.get_clients()`
+one-liner in `CLAUDE.md`).
+
+### Mason or Nix?
+
+Default to **Mason**. Move a tool to **Nix** when any of these hold:
+
+1. **Mason fails.** `:Mason` shows an install failure or no build for
+   aarch64-darwin (`nil`), `:LspLog` / `:messages` show `linked to
+   incompatible libruby`, `dyld: Library not loaded`, `ENOENT`, or
+   `:LspInfo` shows no client on a file that should have one.
+2. **It's tied to a Nix-provided language runtime.** Mason builds against
+   whatever `ruby`/`python3` is on `PATH` at install time — a specific
+   `/nix/store/...` path — so the install breaks when Nix bumps or
+   garbage-collects that runtime. Fragile: Ruby gems with native extensions
+   (`ruby-lsp`, `rubocop`, `erb-lint`), Python tools whose venv points at a
+   Nix Python. Generally fine on Mason: npm-based tools (`vtsls`, `jsonls`,
+   `marksman`, `prettier`) and self-contained Go/Rust binaries (`taplo`,
+   `gopls`, `stylua`).
+3. **It's used outside Neovim too** (shell, git hooks, scripts) — Nix puts
+   one version on `PATH` for everything; Mason's copies are Neovim-only.
+4. **You want the version pinned in git** — `flake.lock` pins Nix packages;
+   Mason installs whatever is latest.
+
+Switching: `nix search nixpkgs <name>` → add to `home.packages` → set
+`<server> = { mason = false }` in `extras.lua` → uninstall the Mason copy →
+rebuild → check `:LspInfo`.
+
+In practice: add the extra, open a file, check `:LspInfo`. Works → stay on
+Mason. Breaks, or it's a native-extension Ruby/Python tool → Nix. `erb-lint`
+is still on Mason and is the likely next candidate.
+
+### Per-project config
+
+lazy.nvim loads a **`.lazy.lua`** file automatically (`local_spec = true` is
+its default): on startup it walks up from the current directory, and the
+first `.lazy.lua` it finds is appended to the plugin specs — same format as
+a file in `nvim/lua/plugins/`, just living in the project:
+
+```lua
+-- ~/code/some-project/.lazy.lua
+return {
+  { import = "lazyvim.plugins.extras.lang.python" },  -- extra only this project needs
+  {
+    "neovim/nvim-lspconfig",
+    opts = { servers = { rubocop = { enabled = false } } },  -- disable a server here
+  },
+  {
+    "stevearc/conform.nvim",
+    opts = { formatters_by_ft = { ruby = { "standardrb" } } },  -- different formatter
+  },
+}
+```
+
+It's read through `vim.secure.read`, so Neovim asks to trust it the first
+time (and after every change) — answer `a` to allow.
+
+Alternatives for plain settings:
+- **`.editorconfig`** — built into Neovim; indent, tab width, final newline.
+  Best for anything the whole team should share.
+- **`.nvim.lua`** — Neovim's built-in exrc, plain Lua. Currently **off**
+  (`exrc = false`); enabling it means adding `vim.o.exrc = true` to
+  `nvim/lua/config/options.lua` and rebuilding.
+
+If the file shouldn't be committed to the project, add `.lazy.lua` (or
+`.nvim.lua`) to that project's `.gitignore`, or globally to
+`~/.config/git/ignore`.
+
+Rule of thumb: every project → this repo; one project → its `.lazy.lua`;
+team-shared style → `.editorconfig`.
+
 ## `~/.zshrc` is Home Manager's
 
 As of the "Bring `.zshrc` under Home Manager" commit (see History),
