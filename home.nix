@@ -23,34 +23,37 @@ let
     };
   };
 
-  # "Mercio" in Spotlight/Launchpad: opens a new kitty instance on the Mercio
-  # workspace session (the same file Cmd+Shift+M opens from inside kitty).
-  # mac-app-util turns it into a trampoline like kitty's, since /nix is nobrowse.
-  mercioWorkspace = let
-    kittyApp = "${config.programs.kitty.package}/Applications/kitty.app";
-  in pkgs.runCommand "mercio-workspace" { } ''
-    contents=$out/Applications/Mercio.app/Contents
-    mkdir -p $contents/MacOS $contents/Resources
-    cp ${kittyApp}/Contents/Resources/kitty.icns $contents/Resources/mercio.icns
-    cat > $contents/Info.plist <<'EOF'
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-      <key>CFBundleName</key><string>Mercio</string>
-      <key>CFBundleIdentifier</key><string>com.miguel.mercio-workspace</string>
-      <key>CFBundleExecutable</key><string>mercio</string>
-      <key>CFBundleIconFile</key><string>mercio</string>
-      <key>CFBundlePackageType</key><string>APPL</string>
-      <key>LSUIElement</key><true/>
-    </dict>
-    </plist>
-    EOF
-    cat > $contents/MacOS/mercio <<'EOF'
-    #!/bin/sh
-    exec /usr/bin/open -n -a "${kittyApp}" --args --session "$HOME/.config/kitty/sessions/mercio.kitty-session"
-    EOF
-    chmod +x $contents/MacOS/mercio
+  # Project workspaces are kitty session files living in each project, not
+  # here: a `.kitty-session` at the repo root (kept out of the project's git
+  # via .git/info/exclude if it's personal). These two are the generic glue.
+  #
+  # ws: opens the current project's .kitty-session (git root, else $PWD) in a
+  # new kitty instance. Bare `cd` lines in the session resolve relative to
+  # the session file, so it needs no absolute paths.
+  ws = pkgs.writeShellScriptBin "ws" ''
+    root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    session="$root/.kitty-session"
+    if [ ! -f "$session" ]; then
+      echo "ws: no .kitty-session in $root" >&2
+      exit 1
+    fi
+    exec /usr/bin/open -n -a "${config.programs.kitty.package}/Applications/kitty.app" \
+      --args --session "$session"
+  '';
+
+  # devpane: for session `launch` lines. Runs a command inside the current
+  # directory's nix dev shell (its flake.nix), then leaves an interactive
+  # shell there, so stopping a service with Ctrl+C (or quitting nvim) drops
+  # to a prompt instead of closing the window. With no command, it just
+  # opens the shell. Login shell (-l) because kitty started from the Dock
+  # carries launchd's bare PATH, without nix.
+  devpane = pkgs.writeScriptBin "devpane" ''
+    #!/bin/zsh -l
+    if [ $# -eq 0 ]; then
+      exec nix develop --command zsh -i
+    fi
+    # The INT trap keeps this wrapper alive when Ctrl+C stops the command; exec resets it.
+    exec nix develop --command zsh -ic "trap : INT; $*; exec zsh -i"
   '';
 in
 {
@@ -83,7 +86,8 @@ in
     nerd-fonts.fira-code
     gh
     bbt
-    mercioWorkspace
+    ws
+    devpane
     # macOS's system Ruby (/usr/bin/ruby) is 2.6.10, EOL since March 2022 --
     # too old for current fastlane (>=2.235 needs Ruby >=3.0; even
     # >=2.232 needs >=2.7), which the qalyo-ios repo's Gemfile.lock pins
@@ -187,22 +191,6 @@ in
       enable_audio_bell = "no";
       confirm_os_window_close = 0;
     };
-    keybindings = {
-      # Opens the Mercio workspace, or switches to it when it is already open.
-      # The path is relative to ~/.config/kitty; the session file comes from
-      # ./kitty/sessions below, and its windows run inside the Mercio repo's
-      # nix dev shell.
-      "cmd+shift+m" = "goto_session sessions/mercio.kitty-session";
-    };
-  };
-
-  # Mercio workspace session, opened by cmd+shift+m and the Mercio launcher.
-  # mercio-pane wraps every window's command in the repo's nix dev shell.
-  home.file.".config/kitty/sessions/mercio.kitty-session".source =
-    ./kitty/sessions/mercio.kitty-session;
-  home.file.".config/kitty/sessions/mercio-pane" = {
-    source = ./kitty/sessions/mercio-pane;
-    executable = true;
   };
 
   # zsh is Home Manager's now (below), so every one of these gets its

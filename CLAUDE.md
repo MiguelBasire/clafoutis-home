@@ -96,6 +96,12 @@ Two things `checkhealth` alone won't catch:
 
 ## Working conventions specific to this repo
 
+- **Nothing project-specific here.** This repo is the machine/tooling
+  layer. A project's Kitty workspace goes in that project's
+  `.kitty-session` (opened with `ws`, windows wrapped in `devpane`), its
+  per-project Neovim tweaks in its `.lazy.lua`, its toolchain in its own
+  `flake.nix`. See the Kitty entry in `README.md`.
+
 - **Don't default to `home.file` for anything a macOS *system* picker needs
   to discover** (Input Sources, and presumably similar system UIs) —
   `home.file`'s symlinks-into-`/nix/store` are invisible to at least the

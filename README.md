@@ -96,6 +96,21 @@ pins exact package versions.
   guarantees fixed-width glyphs instead of the plain family's proportional
   metrics).
 
+  **Project workspaces stay out of this repo.** A project's Kitty layout
+  (tabs, services, startup order) is a `.kitty-session` file at that
+  project's root — kept out of its git via `.git/info/exclude` when it's
+  personal. This repo only ships the generic glue, both in `home.nix`:
+  - `ws` — run from anywhere in a project; opens its `.kitty-session` (git
+    root, else `$PWD`) in a new Kitty instance.
+  - `devpane <cmd>` — for session `launch` lines; runs `<cmd>` inside the
+    project's `nix develop` shell, then leaves a prompt there.
+
+  In the session file, use `cd .` after each `new_tab` (Kitty resolves
+  relative `cd` paths against the session file's directory, and a `cd`
+  before the first `new_tab` is discarded) and bare `devpane` in `launch`
+  lines — no absolute paths needed. A Mercio-specific session, shortcut and
+  Spotlight launcher used to live here; they moved to the Mercio repo.
+
 - **QWERTY-fr keyboard layout** ([qwerty-fr/qwerty-fr](https://github.com/qwerty-fr/qwerty-fr),
   MIT, pinned to a specific commit via `pkgs.fetchFromGitHub`). **Not** a
   `home.file` entry, unlike everything else here — that was tried first
