@@ -29,6 +29,84 @@ own build output so it doesn't depend on the `home-manager` CLI already being
 on `PATH`.) Commit `flake.lock` changes along with the rest — that's what
 pins exact package versions.
 
+## Bootstrapping a fresh Mac
+
+Not yet exercised end-to-end on a real fresh install — reconstructed from
+this config and the current machine's setup, so expect to fix this section
+the first time it's used.
+
+```
+0. prereqs ─► 1. Nix ─► 2. clone ─► 3. first build + activate ─► 4. first launches ─► 5. manual bits
+```
+
+**0. Prereqs**
+- The macOS user must be **`miguel`** — `home.nix` hardcodes
+  `home.username`/`/Users/miguel`, and the flake is `aarch64-darwin` only.
+- `xcode-select --install` — git, plus the C compiler treesitter needs.
+
+**1. Install Nix** (multi-user; check https://nixos.org/download for the
+current command):
+
+```sh
+sh <(curl -L https://nixos.org/nix/install) --daemon
+```
+
+Then open a **new** terminal (Apple's `/etc/zshrc` loads Nix until step 3
+takes over via `~/.zshenv`).
+
+**2. Clone this repo**
+
+```sh
+git clone https://github.com/MiguelBasire/clafoutis-home.git ~/.config/home-manager
+```
+
+**3. First build + activate**
+
+```sh
+cd ~/.config/home-manager
+nix --extra-experimental-features 'nix-command flakes' \
+  build .#homeConfigurations.miguel.activationPackage -L
+HOME_MANAGER_BACKUP_EXT=bak ./result/activate
+```
+
+Both extras are first-run only:
+- `--extra-experimental-features`: flakes get enabled by `NIX_CONFIG`,
+  which this config itself sets — chicken-and-egg on the very first build.
+- `HOME_MANAGER_BACKUP_EXT=bak`: activation refuses to overwrite a file it
+  doesn't own (*"Existing file … would be clobbered"*), and a fresh Mac may
+  already have e.g. `~/.zshrc`. With this set, such files are renamed to
+  `*.bak` instead. Later activations replace Home Manager's own symlinks
+  without asking, so it's not needed again — and better not set
+  permanently, since a tool silently overwriting a managed file should
+  surface as an error, not a quiet backup.
+
+What this puts in place: CLI tools (`nvim`, `rg`, `fd`, `fzf`, `bat`,
+`btop`, `lazygit`, `gh`, `bbt`, `ruby`, `nil`, `ruby-lsp`, ..., `ws`,
+`devpane`), `~/.zshrc`/`.zshenv`, Kitty + `kitty.conf`, `~/.config/nvim`,
+the Spotlight trampolines, and the QWERTY-fr bundle.
+
+**4. First launches** (automatic, just wait)
+- Open Kitty from Spotlight — new shells have everything.
+- `nvim` — lazy.nvim installs the plugins.
+- Opening a `.ts`/`.json`/`.md`/... file — Mason installs that LSP (15s+).
+  The `.nix`/`.rb` ones already came from Nix.
+
+**5. Not managed by this repo** (manual)
+- SSH keys (`~/.ssh`) and `~/.ssh/config`.
+- `~/.gitconfig` — identity, SSH commit signing, `allowed_signers`.
+- `gh auth login` for each account (`MiguelBasire`, `miguelbasire-mercio`).
+- QWERTY-fr: add it in System Settings › Keyboard › Input Sources — needs a
+  **full restart** before it shows up (see below).
+- Projects: clone them; each brings its own `flake.nix`. Personal
+  `.kitty-session` files are local-only (excluded from the project's git),
+  so they don't come back — recreate them.
+
+Known failure points:
+- `trampolineApps` dies with an AppleScript error during activate →
+  restart the Mac, don't debug the config (see the QWERTY-fr entry).
+- Nix missing from new shells after a macOS update → already handled:
+  `~/.zshenv` sources `nix-daemon.sh` itself.
+
 ## What's managed and why
 
 - **Neovim + LazyVim.** `home.packages` installs `neovim` itself plus
