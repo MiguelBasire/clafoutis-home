@@ -265,6 +265,81 @@ If the file shouldn't be committed to the project, add `.lazy.lua` (or
 Rule of thumb: every project → this repo; one project → its `.lazy.lua`;
 team-shared style → `.editorconfig`.
 
+## Bootstrapping a new project (Rust example)
+
+This repo is the machine layer every project gets for free: Neovim +
+LazyVim, Kitty, git/`gh`, Nix with flakes enabled, `ws`/`devpane`. Nothing
+language- or project-specific goes here — that lives in the project:
+
+| What | Where |
+|---|---|
+| Toolchain (`cargo`, `rustc`, `rust-analyzer`, ...) | the project's `flake.nix` devShell |
+| Neovim language support | `extras.lua` here if it's a regular language for you, else the project's `.lazy.lua` |
+| Kitty workspace | the project's `.kitty-session` (`.git/info/exclude` if personal) |
+
+**1. Toolchain** — in the project's `flake.nix`, so each project pins its
+own Rust version and teammates/CI get the same one:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  outputs = { nixpkgs, ... }:
+    let pkgs = nixpkgs.legacyPackages.aarch64-darwin; in {
+      devShells.aarch64-darwin.default = pkgs.mkShell {
+        packages = with pkgs; [ cargo rustc rust-analyzer clippy rustfmt ];
+        RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";  # std source for rust-analyzer
+      };
+    };
+}
+```
+
+(Need a specific toolchain or nightly via `rust-toolchain.toml`? That's
+what overlays like `oxalica/rust-overlay` are for — check their current
+setup before adding one.)
+
+**2. Neovim** — LazyVim's `lang.rust` extra
+(`{ import = "lazyvim.plugins.extras.lang.rust" }`). It uses
+**rustaceanvim**, which does *not* install rust-analyzer via Mason: it takes
+whatever `rust-analyzer` is on `PATH` (and warns "rust-analyzer not found in
+PATH" otherwise). So the server comes from the project's flake and matches
+its toolchain — the "Nix, not Mason" case above, with no `mason = false`
+needed. Mason only installs `codelldb` (debugger). It also brings
+`crates.nvim` (dependency versions inline in `Cargo.toml`).
+
+Catch: Neovim must be started **inside the dev shell**, or rust-analyzer
+isn't on `PATH` — `devpane nvim` does exactly that.
+
+**3. Workspace** — the project's `.kitty-session`:
+
+```
+new_tab dev
+cd .
+layout splits
+launch --title nvim devpane nvim
+focus
+launch --location=vsplit --title cargo devpane 'cargo watch -x check'
+
+new_tab shell
+cd .
+launch --title shell devpane
+```
+
+(`cargo watch` isn't part of cargo — add `cargo-watch` to the flake's
+`packages`.)
+
+**Day one, from an empty folder:**
+
+```sh
+mkdir ~/Projects/foo && cd ~/Projects/foo && git init
+$EDITOR flake.nix                 # the devShell above
+git add flake.nix                 # flakes only see git-tracked files
+nix develop --command cargo init  # Cargo.toml + src/main.rs
+$EDITOR .kitty-session            # optional
+ws
+```
+
+The first `ws` is slow (Nix downloads the toolchain); cached after that.
+
 ## `~/.zshrc` is Home Manager's
 
 As of the "Bring `.zshrc` under Home Manager" commit (see History),
