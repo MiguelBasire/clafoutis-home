@@ -1,19 +1,22 @@
 # Home Manager config
 
 Standalone [Home Manager](https://nix-community.github.io/home-manager/) setup
-for this Mac — no `nix-darwin`, just a flake that manages a chunk of the user
-environment declaratively. Started as "configure Neovim with LazyVim through
+for this Mac and a Linux laptop (TUXEDO OS) — no `nix-darwin`/NixOS, just a
+flake that manages a chunk of the user environment declaratively. Started as "configure Neovim with LazyVim through
 Nix" and grew from there.
 
 ## Layout
 
 ```
-flake.nix   -- inputs (nixpkgs, home-manager, mac-app-util) and the
-               homeConfigurations."miguel" output
+flake.nix   -- inputs (nixpkgs, home-manager, mac-app-util) and two outputs
+               from one home.nix: homeConfigurations."miguel" (macOS,
+               aarch64-darwin) and "miguel-linux" (x86_64-linux)
 home.nix    -- everything that's actually managed: packages, Neovim config
                wiring, Kitty, zoxide
 nvim/       -- the LazyVim starter template, git-tracked here, symlinked
                file-by-file into ~/.config/nvim
+xkb/        -- own xkb layouts (fr_azerty_num), linked into
+               ~/.config/xkb/symbols on Linux
 ```
 
 ## Applying changes
@@ -23,6 +26,8 @@ cd ~/.config/home-manager
 nix build .#homeConfigurations.miguel.activationPackage -L
 ./result/activate
 ```
+
+On Linux, use `.#homeConfigurations.miguel-linux.activationPackage` instead.
 
 (Equivalent to `home-manager switch --flake .#miguel`, just via the flake's
 own build output so it doesn't depend on the `home-manager` CLI already being
@@ -41,7 +46,7 @@ the first time it's used.
 
 **0. Prereqs**
 - The macOS user must be **`miguel`** — `home.nix` hardcodes
-  `home.username`/`/Users/miguel`, and the flake is `aarch64-darwin` only.
+  `home.username`/`/Users/miguel`, and the macOS output is `aarch64-darwin`.
 - `xcode-select --install` — git, plus the C compiler treesitter needs.
 
 **1. Install Nix** (multi-user; check https://nixos.org/download for the
@@ -106,6 +111,66 @@ Known failure points:
   restart the Mac, don't debug the config (see the QWERTY-fr entry).
 - Nix missing from new shells after a macOS update → already handled:
   `~/.zshenv` sources `nix-daemon.sh` itself.
+
+## Bootstrapping Linux (TUXEDO OS)
+
+Same flow as the Mac above, with these differences. `home.nix` is shared;
+the Linux-only bits are `targets.genericLinux` (non-NixOS integration) and
+`fonts.fontconfig`, and the macOS-only bits (mac-app-util trampolines,
+QWERTY-fr bundle copy) are skipped; QWERTY-fr is installed the Linux way
+instead (below).
+
+- User must be **`miguel`** with home `/home/miguel`; the output is
+  `x86_64-linux`.
+- Install Nix multi-user (`--daemon`), as on the Mac. `git` comes from apt
+  or from `nix shell nixpkgs#git` for the clone.
+- Build and activate `miguel-linux`:
+
+  ```sh
+  cd ~/.config/home-manager
+  nix --extra-experimental-features 'nix-command flakes' \
+    build .#homeConfigurations.miguel-linux.activationPackage -L
+  HOME_MANAGER_BACKUP_EXT=bak ./result/activate
+  ```
+
+- **GPU drivers, one time:** Nix-built GUI apps (Kitty) can't use the
+  host's OpenGL drivers on a non-NixOS distro. `targets.genericLinux.gpu`
+  handles it, but needs root once: activation prints
+  `sudo /nix/store/…-non-nixos-gpu/bin/non-nixos-gpu-setup`. Run it, and
+  again whenever activation says the drivers need an update (after
+  `nix flake update`). With the proprietary NVIDIA driver, also set
+  `targets.genericLinux.gpu.nvidia.{enable,version,sha256}` to match the
+  host driver.
+- **Login shell must be Nix's zsh, not the distro's.** Home Manager can't
+  change it:
+  ```sh
+  echo "$HOME/.nix-profile/bin/zsh" | sudo tee -a /etc/shells
+  chsh -s "$HOME/.nix-profile/bin/zsh"   # then log out and back in
+  ```
+  With Ubuntu's `/usr/bin/zsh`, every new shell fails on fzf-tab's compiled
+  module (`failed to load module aloxaf/fzftab … GLIBC_ABI_DT_X86_64_PLT not
+  found`): the module is built against Nix's glibc, and the distro zsh
+  loads it into a process running the system glibc. Answer `n` to its
+  "rebuild now?" prompt; rebuilding can't fix this (and can't write to the
+  store anyway).
+- **Imperative `nix profile` duplicates block activation.** The first
+  activation here failed with a `git-jump` conflict: bat, btop, fd, fzf, gh,
+  git, lazygit, neovim and ripgrep were also in the imperative profile.
+  `nix profile remove` those (and anything else `home.nix` installs) first;
+  leave the `nix` entry alone.
+- If an old `*.bak` already exists next to a managed file (e.g.
+  `kitty.conf.bak`), activation refuses to overwrite it; use another
+  extension (`HOME_MANAGER_BACKUP_EXT=pre-hm`).
+- Kitty is started from the terminal or the desktop menu (genericLinux
+  puts `~/.nix-profile/share` on `XDG_DATA_DIRS`, so its `.desktop` entry
+  shows up after the next login). `ws` detaches it with `setsid`.
+- QWERTY-fr on Linux is a plain `xdg.configFile` symlink at
+  `~/.config/xkb/symbols/us_qwerty-fr`, which libxkbcommon reads per user
+  (no root, and unlike macOS the symlink into `/nix/store` is fine). Pick
+  layout `us_qwerty-fr` in the desktop's keyboard settings. A hand-copied
+  file already there blocks the first activation, hence `HOME_MANAGER_BACKUP_EXT`.
+  `fr_azerty_num` (AZERTY with digits unshifted, the repo's own layout in
+  `xkb/`) is linked next to it the same way.
 
 ## What's managed and why
 

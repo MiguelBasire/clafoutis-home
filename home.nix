@@ -1,6 +1,19 @@
 { config, lib, pkgs, ... }:
 
 let
+  # Shared by the macOS (aarch64-darwin) and Linux (x86_64-linux, TUXEDO OS)
+  # configurations in flake.nix; platform-specific bits branch on this.
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+
+  # QWERTY-fr keyboard layout sources (macOS bundle + Linux xkb symbols),
+  # pinned to a commit. Installed further down, differently per platform.
+  qwertyFr = pkgs.fetchFromGitHub {
+    owner = "qwerty-fr";
+    repo = "qwerty-fr";
+    rev = "812e3c14e8366bb211688fe0c494f34a8e39885d";
+    hash = "sha256-iXme/Edv2eG8WP58GXbFzUfVqr26Lu7lgJzGq21iE2E=";
+  };
+
   # Bitbucket Cloud CLI ("gh for Bitbucket"). Not in nixpkgs, so packaged
   # directly from source, pinned to a commit. Replaced acli (Atlassian's
   # own official CLI) here after discovering acli has no Bitbucket
@@ -29,7 +42,8 @@ let
   #
   # ws: opens the current project's .kitty-session (git root, else $PWD) in a
   # new kitty instance. Bare `cd` lines in the session resolve relative to
-  # the session file, so it needs no absolute paths.
+  # the session file, so it needs no absolute paths. On Linux, setsid -f
+  # detaches kitty from the calling terminal the way `open -n` does on macOS.
   ws = pkgs.writeShellScriptBin "ws" ''
     root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
     session="$root/.kitty-session"
@@ -37,8 +51,13 @@ let
       echo "ws: no .kitty-session in $root" >&2
       exit 1
     fi
-    exec /usr/bin/open -n -a "${config.programs.kitty.package}/Applications/kitty.app" \
-      --args --session "$session"
+    ${if isDarwin then ''
+      exec /usr/bin/open -n -a "${config.programs.kitty.package}/Applications/kitty.app" \
+        --args --session "$session"
+    '' else ''
+      exec ${pkgs.util-linux}/bin/setsid -f "${config.programs.kitty.package}/bin/kitty" \
+        --session "$session" >/dev/null 2>&1
+    ''}
   '';
 
   # devpane: for session `launch` lines. Runs a command inside the current
@@ -46,9 +65,10 @@ let
   # shell there, so stopping a service with Ctrl+C (or quitting nvim) drops
   # to a prompt instead of closing the window. With no command, it just
   # opens the shell. Login shell (-l) because kitty started from the Dock
-  # carries launchd's bare PATH, without nix.
+  # carries launchd's bare PATH, without nix. Nix's zsh rather than /bin/zsh,
+  # which Ubuntu-based distros don't ship by default.
   devpane = pkgs.writeScriptBin "devpane" ''
-    #!/bin/zsh -l
+    #!${pkgs.zsh}/bin/zsh -l
     if [ $# -eq 0 ]; then
       exec nix develop --command zsh -i
     fi
@@ -58,7 +78,7 @@ let
 in
 {
   home.username = "miguel";
-  home.homeDirectory = "/Users/miguel";
+  home.homeDirectory = if isDarwin then "/Users/miguel" else "/home/miguel";
   # Do not bump this after the first switch; it just pins default option
   # behavior to the Home Manager release it was written against.
   home.stateVersion = "24.11";
@@ -67,7 +87,8 @@ in
   # ripgrep/fd for telescope/fzf-lua, lazygit for the git UI, a nerd font
   # for icons, and node/python/unzip/make for mason.nvim installers.
   # A C compiler for treesitter parsers comes from Xcode Command Line
-  # Tools (already installed), so it's intentionally not listed here.
+  # Tools on macOS (already installed), so it's only listed for Linux,
+  # where it would otherwise depend on apt's build-essential.
   # fzf itself is installed via programs.fzf below (not listed here) so its
   # module can also own the package version.
   home.packages = with pkgs; [
@@ -105,6 +126,10 @@ in
     statix
     ruby-lsp
     rubocop
+  ] ++ lib.optionals (!isDarwin) [
+    gcc
+    # wl-copy / wl-paste, behind the clipcopy/clippaste aliases below.
+    wl-clipboard
   ];
 
   # The LazyVim starter config lives in ./nvim (git-tracked here).
@@ -134,15 +159,11 @@ in
   # Input Sources > + > Others > qwerty-fr (may need a logout to appear).
   # That activation step lives in ~/Library/Preferences/com.apple.HIToolbox.plist,
   # which isn't something Home Manager manages here.
-  home.activation.installQwertyFrLayout = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    layoutSrc="${
-      pkgs.fetchFromGitHub {
-        owner = "qwerty-fr";
-        repo = "qwerty-fr";
-        rev = "812e3c14e8366bb211688fe0c494f34a8e39885d";
-        hash = "sha256-iXme/Edv2eG8WP58GXbFzUfVqr26Lu7lgJzGq21iE2E=";
-      }
-    }/mac/bundle/qwerty-fr.bundle"
+  #
+  # The copy-instead-of-symlink workaround is macOS only; Linux gets a plain
+  # xdg.configFile below.
+  home.activation.installQwertyFrLayout = lib.mkIf isDarwin (lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    layoutSrc="${qwertyFr}/mac/bundle/qwerty-fr.bundle"
     layoutDest="$HOME/Library/Keyboard Layouts/qwerty-fr.bundle"
     $DRY_RUN_CMD mkdir -p "$HOME/Library/Keyboard Layouts"
     if [ -e "$layoutDest" ]; then
@@ -154,7 +175,28 @@ in
     fi
     $DRY_RUN_CMD cp -RL "$layoutSrc" "$layoutDest"
     $DRY_RUN_CMD chmod -R u+w "$layoutDest"
-  '';
+  '');
+
+  # Linux: libxkbcommon (Wayland compositors) also reads user layouts from
+  # ~/.config/xkb, so no root and no copy needed -- unlike the macOS picker,
+  # it reads through a symlink into /nix/store fine. Selected by name
+  # (layout "us_qwerty-fr") in the desktop's keyboard settings.
+  xdg.configFile."xkb/symbols/us_qwerty-fr" = lib.mkIf (!isDarwin) {
+    source = "${qwertyFr}/linux/us_qwerty-fr";
+  };
+  # Own layout, kept in ./xkb: French AZERTY with digits on the unshifted
+  # number row. Installed the same way, selected as layout "fr_azerty_num".
+  xdg.configFile."xkb/symbols/fr_azerty_num" = lib.mkIf (!isDarwin) {
+    source = ./xkb/fr_azerty_num;
+  };
+
+  # Non-NixOS Linux (TUXEDO OS): sets XDG_DATA_DIRS etc. for Nix-installed
+  # apps, and enables targets.genericLinux.gpu so the Nix-built Kitty can
+  # find the host's OpenGL drivers. That needs a one-time
+  # `sudo non-nixos-gpu-setup`; activation prints the exact command.
+  targets.genericLinux.enable = pkgs.stdenv.hostPlatform.isLinux;
+  # So fontconfig (and thus Kitty) sees nerd-fonts.fira-code from the HM profile.
+  fonts.fontconfig.enable = lib.mkIf pkgs.stdenv.hostPlatform.isLinux true;
 
   home.sessionVariables = {
     EDITOR = "nvim";
@@ -170,6 +212,12 @@ in
   # Was `export PATH="$HOME/.local/bin:$PATH"` in the hand-written ~/.zshrc.
   home.sessionPath = [
     "${config.home.homeDirectory}/.local/bin"
+  ] ++ lib.optionals (!isDarwin) [
+    # Carried over from the Linux box's pre-Home-Manager ~/.zshrc: personal
+    # scripts, `cargo install` binaries, and `cs install` (coursier) ones.
+    "${config.home.homeDirectory}/bin"
+    "${config.home.homeDirectory}/.cargo/bin"
+    "${config.home.homeDirectory}/.local/share/coursier/bin"
   ];
 
   programs.kitty = {
@@ -201,21 +249,46 @@ in
     enableZshIntegration = true;
   };
 
+  # Per-project environments from each project's .envrc (`use flake` for
+  # its flake.nix dev shell). nix-direnv caches the evaluated shell, so
+  # cd-ing in doesn't re-run `nix develop` every time. Was a hand-written
+  # `eval "$(direnv hook zsh)"` plus an imperative `nix profile` install on
+  # the Linux box.
+  programs.direnv = {
+    enable = true;
+    enableZshIntegration = true;
+    nix-direnv.enable = true;
+  };
+
   programs.starship = {
     enable = true;
     enableZshIntegration = true;
     # Starship's official "Gruvbox Rainbow" preset, fetched verbatim and
     # parsed rather than hand-transcribed, so the glyphs/colors stay
     # byte-accurate to the upstream preset
-    # (https://starship.rs/presets/#gruvbox-rainbow).
-    settings = builtins.fromTOML (
-      builtins.readFile (
-        pkgs.fetchurl {
-          url = "https://starship.rs/presets/toml/gruvbox-rainbow.toml";
-          sha256 = "sha256-YFTZi5FggispDhtp85dUTb26C7Sfv+Cx8MVnUy4XANk=";
-        }
-      )
-    );
+    # (https://starship.rs/presets/#gruvbox-rainbow). Pinned to a starship
+    # release tag: the unversioned starship.rs URL changed under us with
+    # v1.27.0, breaking the hash on any machine without it cached.
+    #
+    # The preset (every version, even the latest) has an os.symbols.AOSC
+    # entry that nixpkgs' starship 1.27.0 rejects ("unknown variant `AOSC`"
+    # on every prompt), so that one key is dropped after parsing.
+    settings =
+      let
+        preset = builtins.fromTOML (
+          builtins.readFile (
+            pkgs.fetchurl {
+              url = "https://raw.githubusercontent.com/starship/starship/v1.26.0/docs/public/presets/toml/gruvbox-rainbow.toml";
+              sha256 = "sha256-YFTZi5FggispDhtp85dUTb26C7Sfv+Cx8MVnUy4XANk=";
+            }
+          )
+        );
+      in
+      preset // {
+        os = preset.os // {
+          symbols = builtins.removeAttrs preset.os.symbols [ "AOSC" ];
+        };
+      };
   };
 
   # fzf's own Ctrl+R (history search) and Ctrl+T / **<Tab> (fuzzy file
@@ -251,6 +324,16 @@ in
       gstp = "git stash pop";
       grb = "git rebase";
       grbi = "git rebase -i";
+      # sbt in dev mode (sbt-tpolecat's relaxed warnings), with a heap dump on OOM.
+      ssbt = ''DEV=true SBT_TPOLECAT_DEV=true JAVA_OPTS="-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/" sbt'';
+    } // lib.optionalAttrs (!isDarwin) {
+      # GNU ls only (macOS's BSD ls has no --hyperlink); Kitty makes the
+      # names clickable.
+      ls = "ls --hyperlink=auto --color=auto";
+      # Oh My Zsh's clipboard helpers, which the Linux box relied on before
+      # moving to Home Manager (OMZ wasn't carried over). Wayland only.
+      clipcopy = "wl-copy";
+      clippaste = "wl-paste";
     };
     # Fuzzy Tab-completion menu. Home Manager sources plugins (mkOrder 900)
     # after enableCompletion's compinit (570) and autosuggestion (700), so
@@ -274,7 +357,8 @@ in
     # is Home Manager's profile and has no nix-daemon.sh, so the old
     # ~/.nix-profile-based block that used to live here was a silent no-op
     # all along. nix-daemon.sh guards against double-sourcing, so /etc/zshrc
-    # and /etc/bashrc still sourcing it too is harmless.
+    # and /etc/bashrc still sourcing it too is harmless. Same path on a
+    # multi-user Nix install on Linux.
     envExtra = ''
       if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
         . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh

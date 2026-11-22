@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 A standalone [Home Manager](https://nix-community.github.io/home-manager/)
-flake managing a slice of this macOS user's environment — no `nix-darwin`.
+flake managing a slice of this user's environment on macOS and on Linux
+(TUXEDO OS, non-NixOS) — no `nix-darwin`/NixOS.
 Started as "Neovim/LazyVim via Nix" and grew to include Kitty and a handful
 of CLI tools. Full rationale and history are in `README.md`; this file is
 the quick-reference for making changes.
@@ -16,7 +17,8 @@ Apply any change to `home.nix` or `nvim/` — nothing takes effect until this
 runs:
 
 ```sh
-nix build .#homeConfigurations.miguel.activationPackage -L
+nix build .#homeConfigurations.miguel.activationPackage -L        # macOS
+nix build .#homeConfigurations.miguel-linux.activationPackage -L  # Linux
 ./result/activate
 ```
 
@@ -55,8 +57,20 @@ Two things `checkhealth` alone won't catch:
 ## Architecture
 
 - `flake.nix` — inputs (`nixpkgs-unstable`, `home-manager`, `mac-app-util`)
-  and the single `homeConfigurations."miguel"` output. `system` is
-  hardcoded to `"aarch64-darwin"`, not parameterized. Plain
+  and two outputs built by `mkHome system extraModules` from the same
+  `home.nix`: `homeConfigurations."miguel"` (`aarch64-darwin`, plus the
+  `mac-app-util` module) and `"miguel-linux"` (`x86_64-linux`). Platform
+  differences live in `home.nix` behind `isDarwin` /
+  `pkgs.stdenv.hostPlatform.isLinux`, not in separate per-system files.
+  QWERTY-fr is one pinned `qwertyFr` source installed two ways: the
+  copy-into-`~/Library` activation on Darwin, a plain `xdg.configFile`
+  symlink to `~/.config/xkb/symbols/us_qwerty-fr` on Linux (libxkbcommon
+  reads it fine through the symlink). The repo's own `xkb/fr_azerty_num`
+  is linked next to it the same way, Linux-only. Other Darwin-only: `ws`'s `open -n`.
+  Linux-only: `targets.genericLinux` (needs a one-time `sudo
+  non-nixos-gpu-setup`, printed by activation, for Kitty's OpenGL),
+  `fonts.fontconfig`, `gcc`, and `ws`'s `setsid -f`. Keep
+  anything new either portable or guarded the same way. Plain
   `nixpkgs.legacyPackages.${system}` for `pkgs` — this briefly became
   `import nixpkgs { config.allowUnfreePredicate = ...; }` while `acli`
   (unfree-licensed) was installed, reverted back when `acli` was removed
@@ -67,7 +81,7 @@ Two things `checkhealth` alone won't catch:
   homepage — that's exactly how `acli` got added by mistake).
 - `home.nix` — all managed state: `home.packages` (CLI tools), the
   `home.file` entry that wires up `nvim/`, and `programs.{kitty,zsh,zoxide,
-  starship,fzf}`.
+  starship,fzf,direnv}`.
 - `nvim/` — the LazyVim starter template, git-tracked here. Wired into
   `~/.config/nvim` via `home.file` with `recursive = true`, which symlinks
   each file individually rather than symlinking the whole directory in one
@@ -90,6 +104,7 @@ Two things `checkhealth` alone won't catch:
   (`programs.zsh.enable = true`) — generated, same rule as `kitty.conf`
   below: don't hand-edit it, changes go in `home.nix`'s `programs.zsh`
   block and get overwritten on the next activate. `zoxide`/`starship`/`fzf`
+  (and `direnv`, with `nix-direnv`)
   all use real `enableZshIntegration = true` rather than hand-appended
   `eval` lines. See the `~/.zshrc is Home Manager's` section of `README.md`
   for the full option-by-option mapping.
